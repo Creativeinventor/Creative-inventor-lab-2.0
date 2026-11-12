@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "UploadedFile": {
+      "title": "UploadedFile",
+      "description": "Metadata for files stored in Firebase Cloud Storage by administrators",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the uploaded file record"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original file name with extension",
+          "maxLength": 255
+        },
+        "fileType": {
+          "type": "string",
+          "description": "MIME type or file category of the uploaded file",
+          "maxLength": 100
+        },
+        "fileSize": {
+          "type": "number",
+          "description": "Size of the file in bytes"
+        },
+        "storagePath": {
+          "type": "string",
+          "description": "Full path of the object inside Firebase Storage bucket",
+          "maxLength": 500
+        },
+        "downloadURL": {
+          "type": "string",
+          "description": "Public or authenticated download URL for the file"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the file was uploaded"
+        },
+        "uploadedBy": {
+          "type": "string",
+          "description": "User ID of the administrator who uploaded the file",
+          "maxLength": 128
+        }
+      },
+      "required": ["fileName", "fileType", "fileSize", "storagePath", "downloadURL", "uploadedBy"]
+    },
+    "AdminProfile": {
+      "title": "AdminProfile",
+      "description": "Administrator profile record in Firestore",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Administrator username",
+          "maxLength": 50
+        },
+        "role": {
+          "type": "string",
+          "description": "System role",
+          "enum": ["admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["uid", "username", "role"]
+    }
+  },
+  "firestore": {
+    "/uploadedFiles/{fileId}": {
+      "schema": "UploadedFile",
+      "description": "Collection of uploaded file metadata"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminProfile",
+      "description": "Collection of administrator profiles for role verification"
+    }
+  }
+}

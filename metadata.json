@@ -1,0 +1,6 @@
+{
+  "name": "Creative Inventor Lab",
+  "description": "Administrator-only cloud file storage and management portal with Firebase Authentication, Cloud Storage, and Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
