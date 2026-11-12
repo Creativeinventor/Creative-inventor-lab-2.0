@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { subscribeToAuth, loginAdmin, logoutAdmin, getStoredDemoUser } from '../firebase/auth';
+import { subscribeToAuth, loginAdmin, logoutAdmin } from '../firebase/auth';
 import { isFirebaseConfigured } from '../firebase/configManager';
 import { AuthUser } from '../types';
 
@@ -7,9 +7,9 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   isConfigured: boolean;
-  isDemo: boolean;
   login: (username: string, pass: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  updateUsernameState: (newUsername: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,9 +21,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (!isConfigured) {
-      // Check if active demo session exists
-      const demo = getStoredDemoUser();
-      setUser(demo);
       setLoading(false);
       return;
     }
@@ -47,15 +44,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
+  const updateUsernameState = (newUsername: string) => {
+    setUser((prev) => (prev ? { ...prev, username: newUsername, displayName: newUsername } : null));
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
         isConfigured,
-        isDemo: !isConfigured || Boolean(user?.isDemo),
         login: handleLogin,
         logout: handleLogout,
+        updateUsernameState,
       }}
     >
       {children}

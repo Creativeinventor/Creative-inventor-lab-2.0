@@ -22,7 +22,15 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   displayName: string | null;
-  isDemo?: boolean;
+  username: string;
+}
+
+export interface AdminUserProfile {
+  uid: string;
+  username: string;
+  authEmail: string;
+  updatedAt?: any;
+  createdAt?: any;
 }
 
 export type FileCategory =

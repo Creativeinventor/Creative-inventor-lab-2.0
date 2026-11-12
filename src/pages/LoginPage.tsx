@@ -8,11 +8,8 @@ import {
   AlertCircle,
   ArrowRight,
   ShieldCheck,
-  Check,
-  Info,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isFirebaseConfigured } from '../firebase/configManager';
 
 interface LoginPageProps {
   onSuccess: () => void;
@@ -20,33 +17,31 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
   const { login } = useAuth();
-  const isConfigured = isFirebaseConfigured();
 
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [quickFilled, setQuickFilled] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
     if (!username.trim()) {
-      setErrorMessage('Please enter your User ID or username.');
+      setErrorMessage('Please enter your User ID.');
       return;
     }
 
     if (!password) {
-      setErrorMessage('Please enter your administrator password.');
+      setErrorMessage('Please enter your password.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await login(username, password);
+      await login(username.trim(), password);
       onSuccess();
     } catch (err: any) {
       console.error('Login error:', err);
@@ -56,13 +51,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleFillDemoCreds = () => {
-    setUsername('admin');
-    setPassword('123');
-    setQuickFilled(true);
-    setTimeout(() => setQuickFilled(false), 2000);
   };
 
   return (
@@ -82,21 +70,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
           <span className="font-extrabold tracking-wider text-base sm:text-lg text-white">
             CREATIVE INVENTOR LAB
           </span>
-        </div>
-
-        {/* Mode Tag */}
-        <div className="flex items-center gap-2">
-          {isConfigured ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Firebase Live Auth
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
-              <Info className="w-3 h-3 text-amber-400" />
-              Demo Mode Active
-            </span>
-          )}
         </div>
       </header>
 
@@ -129,13 +102,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* 1. User ID */}
+            {/* 1. USER ID */}
             <div>
               <label
                 htmlFor="userId"
                 className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2 font-mono"
               >
-                User ID
+                USER ID
               </label>
               <div className="relative">
                 <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
@@ -146,7 +119,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin"
+                  placeholder="Enter User ID"
                   autoComplete="username"
                   required
                   className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700/80 rounded-xl text-white text-sm font-medium focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition"
@@ -154,14 +127,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
               </div>
             </div>
 
-            {/* 2. Password with Show/Hide Password icon */}
+            {/* 2. PASSWORD with Show/Hide Password icon */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label
                   htmlFor="password"
                   className="block text-xs font-bold uppercase tracking-wider text-slate-300 font-mono"
                 >
-                  Password
+                  PASSWORD
                 </label>
               </div>
               <div className="relative">
@@ -173,7 +146,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter Password"
                   autoComplete="current-password"
                   required
                   className="w-full pl-10 pr-11 py-3 bg-slate-950 border border-slate-700/80 rounded-xl text-white text-sm font-medium focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition"
@@ -189,7 +162,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
               </div>
             </div>
 
-            {/* 3. LOGIN button with loading animation */}
+            {/* 3. LOGIN BUTTON with loading animation */}
             <button
               type="submit"
               disabled={isLoading}
@@ -208,31 +181,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
               )}
             </button>
           </form>
-
-          {/* Initial Admin Credentials Helper Note */}
-          <div className="mt-6 pt-5 border-t border-slate-800/80">
-            <div className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs">
-              <div className="font-mono">
-                <span className="text-slate-400 text-[11px] block">
-                  {isConfigured ? 'Production Administrator Access:' : 'Demonstration Mode Access:'}
-                </span>
-                <span className="text-cyan-300 font-semibold">User ID: admin / Password: 123</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleFillDemoCreds}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-mono transition cursor-pointer flex items-center gap-1 shrink-0"
-              >
-                {quickFilled ? <Check className="w-3 h-3 text-emerald-400" /> : null}
-                <span>{quickFilled ? 'Filled' : 'Auto Fill'}</span>
-              </button>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-2 text-center">
-              {isConfigured
-                ? 'Authenticating directly with Firebase Authentication.'
-                : 'Demo Mode: Allows testing the dashboard before configuring Firebase keys.'}
-            </p>
-          </div>
         </div>
       </main>
 

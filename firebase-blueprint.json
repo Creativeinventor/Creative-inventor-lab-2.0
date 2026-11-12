@@ -45,9 +45,9 @@
       },
       "required": ["fileName", "fileType", "fileSize", "storagePath", "downloadURL", "uploadedBy"]
     },
-    "AdminProfile": {
-      "title": "AdminProfile",
-      "description": "Administrator profile record in Firestore",
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Administrator profile mapping custom User ID to Firebase Authentication email",
       "type": "object",
       "properties": {
         "uid": {
@@ -56,13 +56,18 @@
         },
         "username": {
           "type": "string",
-          "description": "Administrator username",
-          "maxLength": 50
+          "description": "Custom administrator User ID used for login",
+          "minLength": 3,
+          "maxLength": 30
         },
-        "role": {
+        "authEmail": {
           "type": "string",
-          "description": "System role",
-          "enum": ["admin"]
+          "description": "Associated Firebase Authentication email address"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
         },
         "createdAt": {
           "type": "string",
@@ -70,7 +75,7 @@
           "description": "Creation timestamp"
         }
       },
-      "required": ["uid", "username", "role"]
+      "required": ["uid", "username", "authEmail"]
     }
   },
   "firestore": {
@@ -78,9 +83,9 @@
       "schema": "UploadedFile",
       "description": "Collection of uploaded file metadata"
     },
-    "/admins/{adminId}": {
-      "schema": "AdminProfile",
-      "description": "Collection of administrator profiles for role verification"
+    "/adminUsers/{userId}": {
+      "schema": "AdminUser",
+      "description": "Collection of administrator profiles for username resolution"
     }
   }
 }

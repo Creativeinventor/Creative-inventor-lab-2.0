@@ -112,9 +112,14 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128;
     }
 
-    match /admins/{adminId} {
-      allow read: if isSignedIn() && request.auth.uid == adminId;
-      allow create, update: if isSignedIn() && request.auth.uid == adminId;
+    // Administrator profile and username mapping collection
+    match /adminUsers/{userId} {
+      allow read, list: if true;
+      allow create, update: if isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.username is string &&
+        request.resource.data.username.size() >= 3 &&
+        request.resource.data.username.size() <= 30;
       allow delete: if false;
     }
 

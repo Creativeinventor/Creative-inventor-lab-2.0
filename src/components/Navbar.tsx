@@ -2,18 +2,18 @@ import React from 'react';
 import {
   Sparkles,
   LogOut,
-  KeyRound,
+  Settings,
   ShieldCheck,
-  AlertTriangle,
+  User as UserIcon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
-  onOpenPasswordModal: () => void;
+  onOpenAccountSettings: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenPasswordModal }) => {
-  const { user, logout, isDemo } = useAuth();
+export const Navbar: React.FC<NavbarProps> = ({ onOpenAccountSettings }) => {
+  const { user, logout } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -22,6 +22,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenPasswordModal }) => {
       console.error('Logout error:', error);
     }
   };
+
+  const currentUsername = user?.username || user?.email?.split('@')[0] || 'admin';
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
@@ -38,45 +40,40 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenPasswordModal }) => {
               <span className="font-extrabold tracking-wider text-base sm:text-lg bg-gradient-to-r from-white via-slate-100 to-cyan-300 bg-clip-text text-transparent">
                 CREATIVE INVENTOR LAB
               </span>
-              {isDemo ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-wider uppercase bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                  <AlertTriangle className="w-3 h-3 text-amber-400" />
-                  DEMO MODE
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
-                  <ShieldCheck className="w-3 h-3" />
-                  Admin
-                </span>
-              )}
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                <ShieldCheck className="w-3 h-3" />
+                Admin
+              </span>
             </div>
             <p className="text-[10px] text-slate-400 font-mono hidden md:block">
-              {isDemo ? 'Cloud Storage (Unconfigured - Demo Mode)' : 'Cloud Storage & Asset Portal'}
+              Cloud Storage & Asset Portal
             </p>
           </div>
         </div>
 
         {/* Right Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Change Password */}
+          {/* Account Settings Button */}
           <button
-            onClick={onOpenPasswordModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-            title="Change administrator password"
+            onClick={onOpenAccountSettings}
+            type="button"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-700/80 text-cyan-300 hover:text-white hover:bg-slate-800 hover:border-cyan-500/40 transition cursor-pointer shadow-sm"
+            title="Open Account Settings"
           >
-            <KeyRound className="w-3.5 h-3.5 text-purple-400" />
-            <span className="hidden sm:inline">Change Password</span>
+            <Settings className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">ACCOUNT SETTINGS</span>
           </button>
 
           {/* User identifier tag */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-slate-300 font-mono">
-            <div className={`w-2 h-2 rounded-full ${isDemo ? 'bg-amber-400' : 'bg-cyan-400'} animate-ping`} />
-            <span>{user?.email?.split('@')[0] || 'admin'}</span>
+            <UserIcon className="w-3 h-3 text-cyan-400" />
+            <span className="font-semibold text-white">{currentUsername}</span>
           </div>
 
           {/* Logout Button */}
           <button
             onClick={handleLogout}
+            type="button"
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-bold transition shadow-sm cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
