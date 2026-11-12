@@ -1,63 +1,51 @@
 import { FirebaseConfig } from '../types';
 
-export function getActiveFirebaseConfig(): FirebaseConfig | null {
-  const apiKey = (import.meta.env.VITE_FIREBASE_API_KEY || '').trim();
-  const authDomain = (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim();
-  const projectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim();
-  const storageBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim();
-  const messagingSenderId = (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim();
-  const appId = (import.meta.env.VITE_FIREBASE_APP_ID || '').trim();
+// Web Client credentials registered for Firebase Project: creative-inventor-a8723
+const PROJECT_CONFIG: FirebaseConfig = {
+  apiKey: 'AIzaSyDR9NE88FNE2ya4MW20BkyWzspjwCdKkQc',
+  authDomain: 'creative-inventor-a8723.firebaseapp.com',
+  projectId: 'creative-inventor-a8723',
+  storageBucket: 'creative-inventor-a8723.firebasestorage.app',
+  messagingSenderId: '1052164526097',
+  appId: '1:1052164526097:web:f3cca774959b3a4355a1b0',
+  measurementId: 'G-82H6F21X6Z',
+};
 
-  // If required keys are missing or still placeholder values
-  if (!apiKey || !projectId || apiKey.includes('YourFirebase') || projectId.includes('your-project-id')) {
-    return null;
+export function getActiveFirebaseConfig(): FirebaseConfig {
+  const envApiKey = (import.meta.env.VITE_FIREBASE_API_KEY || '').trim();
+  const envAuthDomain = (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim();
+  const envProjectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim();
+  const envStorageBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim();
+  const envMessagingSenderId = (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim();
+  const envAppId = (import.meta.env.VITE_FIREBASE_APP_ID || '').trim();
+  const envMeasurementId = (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '').trim();
+
+  // If environment variables are set and not placeholder templates, prioritize them
+  if (
+    envApiKey &&
+    envProjectId &&
+    !envApiKey.includes('YourFirebase') &&
+    !envProjectId.includes('your-project')
+  ) {
+    return {
+      apiKey: envApiKey,
+      authDomain: envAuthDomain || `${envProjectId}.firebaseapp.com`,
+      projectId: envProjectId,
+      storageBucket: envStorageBucket || `${envProjectId}.firebasestorage.app`,
+      messagingSenderId: envMessagingSenderId || PROJECT_CONFIG.messagingSenderId,
+      appId: envAppId || PROJECT_CONFIG.appId,
+      measurementId: envMeasurementId || PROJECT_CONFIG.measurementId,
+    };
   }
 
-  return {
-    apiKey,
-    authDomain: authDomain || `${projectId}.firebaseapp.com`,
-    projectId,
-    storageBucket: storageBucket || `${projectId}.firebasestorage.app`,
-    messagingSenderId,
-    appId,
-  };
+  // Use registered Web App credentials for creative-inventor-a8723
+  return PROJECT_CONFIG;
 }
 
 export function isFirebaseConfigured(): boolean {
-  const config = getActiveFirebaseConfig();
-  return Boolean(config && config.apiKey && config.projectId);
+  return true;
 }
 
 export function getMissingFirebaseEnvKeys(): string[] {
-  const keys: (keyof FirebaseConfig)[] = [
-    'apiKey',
-    'authDomain',
-    'projectId',
-    'storageBucket',
-    'messagingSenderId',
-    'appId',
-  ];
-
-  const envMapping: Record<keyof FirebaseConfig, string> = {
-    apiKey: 'VITE_FIREBASE_API_KEY',
-    authDomain: 'VITE_FIREBASE_AUTH_DOMAIN',
-    projectId: 'VITE_FIREBASE_PROJECT_ID',
-    storageBucket: 'VITE_FIREBASE_STORAGE_BUCKET',
-    messagingSenderId: 'VITE_FIREBASE_MESSAGING_SENDER_ID',
-    appId: 'VITE_FIREBASE_APP_ID',
-  };
-
-  const missing: string[] = [];
-  const config = getActiveFirebaseConfig();
-
-  if (!config) {
-    keys.forEach((k) => {
-      const val = import.meta.env[envMapping[k]];
-      if (!val || val.includes('YourFirebase') || val.includes('your-project')) {
-        missing.push(envMapping[k]);
-      }
-    });
-  }
-
-  return missing;
+  return [];
 }
