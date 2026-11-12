@@ -5,22 +5,16 @@ import {
   updatePassword,
   updateProfile,
   onAuthStateChanged,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
   User,
 } from 'firebase/auth';
 import {
   doc,
   getDoc,
   setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
   serverTimestamp,
 } from 'firebase/firestore';
 import { getServices } from './firebase';
-import { AuthUser, AdminUserProfile } from '../types';
+import { AuthUser } from '../types';
 
 const DEFAULT_DOMAIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_EMAIL_DOMAIN) || 'creativeinventorlab.internal';
 const SESSION_KEY = 'creative_inventor_admin_session';
@@ -35,7 +29,7 @@ export function defaultEmailForUsername(username: string): string {
   return `${trimmed}@${DEFAULT_DOMAIN}`;
 }
 
-interface AdminVault {
+export interface AdminVault {
   username: string;
   password: string;
   authEmail: string;
@@ -44,7 +38,7 @@ interface AdminVault {
 
 /**
  * Loads the active administrator credentials from local persistent storage.
- * Defaults to initial credentials (admin / 123) if not yet configured.
+ * Defaults to initial credentials (admin / 123) only until the administrator updates them.
  */
 export function getAdminVault(): AdminVault {
   const defaultVault: AdminVault = {
@@ -91,50 +85,93 @@ export function saveAdminVault(vault: AdminVault): void {
 }
 
 /**
- * Background synchronization with remote Firestore database.
- * Does not block authentication if Firestore API is disabled or still provisioning.
+ * Persists administrator credentials to remote Firebase Firestore database.
+ * Uses a safe timeout guard so it does not block the application if Firestore API is still provisioning.
  */
-async function syncAdminWithFirestore(vault: AdminVault): Promise<void> {
+export async function syncAdminWithFirestore(vault: AdminVault): Promise<void> {
   const { db } = getServices();
   if (!db) return;
 
   try {
     const adminRef = doc(db, 'adminUsers', PRIMARY_ADMIN_DOC_ID);
-    await setDoc(
-      adminRef,
-      {
-        uid: PRIMARY_ADMIN_DOC_ID,
-        username: vault.username,
-        password: vault.password,
-        authEmail: vault.authEmail,
-        updatedAt: serverTimestamp(),
-        lastUpdated: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    await Promise.race([
+      setDoc(
+        adminRef,
+        {
+          uid: PRIMARY_ADMIN_DOC_ID,
+          username: vault.username,
+          password: vault.password,
+          authEmail: vault.authEmail,
+          updatedAt: serverTimestamp(),
+          lastUpdated: new Date().toISOString(),
+        },
+        { merge: true }
+      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout')), 3000)),
+    ]);
   } catch (err: any) {
-    // Non-fatal warning if Firestore API is not yet activated in Google Cloud Console
-    console.info('Firestore sync notice (activate Cloud Firestore in Console to persist in cloud):', err?.message || err);
+    console.info('Firestore database sync note:', err?.message || err);
   }
 }
 
 /**
- * Instant, robust administrator authentication.
- * 1. Checks against default credentials (admin / 123) - ALWAYS WORKS.
- * 2. Checks against active updated credentials saved in the Administrator Vault / Firestore.
- * 3. Never hangs or blocks on network failures.
+ * Synchronizes local vault with remote Firestore database if reachable.
+ */
+export async function refreshVaultFromFirestore(): Promise<AdminVault> {
+  const vault = getAdminVault();
+  const { db } = getServices();
+  if (!db) return vault;
+
+  try {
+    const adminRef = doc(db, 'adminUsers', PRIMARY_ADMIN_DOC_ID);
+    const snap = await Promise.race([
+      getDoc(adminRef),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200)),
+    ]);
+
+    if (snap && snap.exists()) {
+      const data = snap.data();
+      if (data.username && data.password) {
+        vault.username = String(data.username).trim().toLowerCase();
+        vault.password = String(data.password);
+        vault.authEmail = data.authEmail || defaultEmailForUsername(vault.username);
+        vault.updatedAt = data.lastUpdated || new Date().toISOString();
+        saveAdminVault(vault);
+      }
+    }
+  } catch {
+    // If remote read is offline, local persistent vault is authoritative
+  }
+
+  return vault;
+}
+
+/**
+ * Production Administrator Login.
+ * STRICT ENFORCEMENT:
+ * - Only the CURRENT, active administrator credentials can log in.
+ * - Once User ID or Password is changed, the old User ID and old Password are completely rejected.
+ * - Checks active credentials immediately (<5ms) and updates session.
  */
 export async function loginAdmin(identifier: string, password: string): Promise<AuthUser> {
   const normalizedIdentifier = identifier.trim().toLowerCase();
-  const vault = getAdminVault();
 
-  const isDefaultAdmin = normalizedIdentifier === 'admin' && password === '123';
-  const isVaultAdmin =
+  // 1. Check current active credentials from vault first
+  let vault = getAdminVault();
+  let isMatch =
     normalizedIdentifier === vault.username.toLowerCase() && password === vault.password;
 
-  if (isDefaultAdmin || isVaultAdmin) {
-    const effectiveUsername = isVaultAdmin ? vault.username : 'admin';
-    const effectiveEmail = defaultEmailForUsername(effectiveUsername);
+  // 2. If no local match, check if credentials were changed in Firestore
+  if (!isMatch) {
+    vault = await refreshVaultFromFirestore();
+    isMatch =
+      normalizedIdentifier === vault.username.toLowerCase() && password === vault.password;
+  }
+
+  // 3. Strict match evaluation: only current active credentials succeed
+  if (isMatch) {
+    const effectiveUsername = vault.username;
+    const effectiveEmail = vault.authEmail || defaultEmailForUsername(effectiveUsername);
 
     const adminUser: AuthUser = {
       uid: PRIMARY_ADMIN_DOC_ID,
@@ -146,7 +183,7 @@ export async function loginAdmin(identifier: string, password: string): Promise<
     // Store active session immediately
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
 
-    // Background tasks: non-blocking sync with Firestore and Firebase Auth
+    // Background task: persist to remote Firestore and Firebase Auth
     setTimeout(() => {
       syncAdminWithFirestore(vault).catch(() => {});
 
@@ -169,55 +206,22 @@ export async function loginAdmin(identifier: string, password: string): Promise<
     return adminUser;
   }
 
-  // Attempt live Firebase Auth as fallback if custom user exists
-  const { auth } = getServices();
-  if (auth) {
-    try {
-      const email = defaultEmailForUsername(normalizedIdentifier);
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const u = userCredential.user;
-      const adminUser: AuthUser = {
-        uid: u.uid,
-        email: u.email,
-        displayName: u.displayName || normalizedIdentifier,
-        username: normalizedIdentifier,
-      };
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
-      return adminUser;
-    } catch {
-      // Fall through to error
-    }
-  }
-
+  // Old or invalid credentials (such as previous User ID or old password) are strictly rejected
   throw new Error('Invalid User ID or password. Please verify your credentials.');
 }
 
 /**
- * Verifies current password against active administrator credentials.
+ * Verifies current password against the active administrator password.
+ * Strictly requires the CURRENT password.
  */
 export async function verifyCurrentPassword(currentPassword: string): Promise<boolean> {
   const vault = getAdminVault();
-  if (currentPassword === '123' || currentPassword === vault.password) {
-    return true;
-  }
-
-  // Also check Firebase Auth if user is active
-  const { auth } = getServices();
-  if (auth && auth.currentUser && auth.currentUser.email) {
-    try {
-      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  return false;
+  return currentPassword === vault.password;
 }
 
 /**
- * Updates administrator User ID in the Firebase Database and local persistent vault.
+ * Updates administrator User ID in Firebase Database and persistent storage.
+ * Once updated, the old User ID is immediately disabled and cannot log in.
  */
 export async function updateAdminUsername(
   newUsername: string,
@@ -260,8 +264,8 @@ export async function updateAdminUsername(
     }
   } catch {}
 
-  // 4. Persist to Firebase Firestore database in background
-  syncAdminWithFirestore(vault).catch(() => {});
+  // 4. PERSIST TO FIREBASE FIRESTORE DATABASE
+  await syncAdminWithFirestore(vault);
 
   // 5. Update Firebase Auth displayName if available
   const { auth } = getServices();
@@ -277,7 +281,8 @@ export async function updateAdminUsername(
 }
 
 /**
- * Updates administrator password in the Firebase Database and local persistent vault.
+ * Updates administrator password in Firebase Database and persistent storage.
+ * Once updated, the old password is immediately disabled and cannot log in.
  */
 export async function updateAdminPassword(
   currentPassword: string,
@@ -302,8 +307,8 @@ export async function updateAdminPassword(
   vault.password = newPassword;
   saveAdminVault(vault);
 
-  // 3. Persist to Firebase Firestore database in background
-  syncAdminWithFirestore(vault).catch(() => {});
+  // 3. PERSIST TO FIREBASE FIRESTORE DATABASE
+  await syncAdminWithFirestore(vault);
 
   // 4. Update Firebase Auth password if user is signed in
   const { auth } = getServices();
