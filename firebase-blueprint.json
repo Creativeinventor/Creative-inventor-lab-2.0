@@ -47,18 +47,24 @@
     },
     "AdminUser": {
       "title": "AdminUser",
-      "description": "Administrator profile mapping custom User ID to Firebase Authentication email",
+      "description": "Administrator profile mapping custom User ID and credentials in Firebase database",
       "type": "object",
       "properties": {
         "uid": {
           "type": "string",
-          "description": "Firebase Auth UID"
+          "description": "Firebase Auth UID or canonical admin identifier"
         },
         "username": {
           "type": "string",
           "description": "Custom administrator User ID used for login",
           "minLength": 3,
           "maxLength": 30
+        },
+        "password": {
+          "type": "string",
+          "description": "Administrator password",
+          "minLength": 3,
+          "maxLength": 100
         },
         "authEmail": {
           "type": "string",
@@ -75,7 +81,7 @@
           "description": "Creation timestamp"
         }
       },
-      "required": ["uid", "username", "authEmail"]
+      "required": ["uid", "username", "password", "authEmail"]
     }
   },
   "firestore": {

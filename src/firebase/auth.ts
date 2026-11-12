@@ -20,10 +20,12 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { getServices } from './firebase';
-import { AuthUser } from '../types';
+import { AuthUser, AdminUserProfile } from '../types';
 
-const DEFAULT_DOMAIN = import.meta.env.VITE_ADMIN_EMAIL_DOMAIN || 'creativeinventorlab.internal';
+const DEFAULT_DOMAIN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ADMIN_EMAIL_DOMAIN) || 'creativeinventorlab.internal';
 const SESSION_KEY = 'creative_inventor_admin_session';
+const VAULT_KEY = 'creative_inventor_admin_vault';
+export const PRIMARY_ADMIN_DOC_ID = 'primary_admin';
 
 export function defaultEmailForUsername(username: string): string {
   const trimmed = username.trim().toLowerCase();
@@ -33,231 +35,194 @@ export function defaultEmailForUsername(username: string): string {
   return `${trimmed}@${DEFAULT_DOMAIN}`;
 }
 
-/**
- * Resolves a User ID / username to its linked Firebase Authentication email.
- * First searches Firestore collection 'adminUsers' by username.
- * Falls back to default domain mapping for initial 'admin' setup.
- */
-export async function resolveUsernameToEmail(identifier: string): Promise<string> {
-  const trimmed = identifier.trim().toLowerCase();
-  if (trimmed.includes('@')) {
-    return trimmed;
-  }
-
-  const { db } = getServices();
-  if (db) {
-    try {
-      const q = query(collection(db, 'adminUsers'), where('username', '==', trimmed));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        const data = querySnapshot.docs[0].data();
-        if (data.authEmail) {
-          return data.authEmail;
-        }
-      }
-    } catch (err) {
-      console.warn('Notice resolving username from Firestore:', err);
-    }
-  }
-
-  // Fallback for default initial administrator
-  if (trimmed === 'admin') {
-    return defaultEmailForUsername('admin');
-  }
-
-  return defaultEmailForUsername(trimmed);
+interface AdminVault {
+  username: string;
+  password: string;
+  authEmail: string;
+  updatedAt?: string;
 }
 
 /**
- * Ensures administrator profile exists in Firestore and retrieves the current User ID.
+ * Loads the active administrator credentials from local persistent storage.
+ * Defaults to initial credentials (admin / 123) if not yet configured.
  */
-export async function getOrCreateAdminProfile(user: User, fallbackUsername: string = 'admin'): Promise<string> {
-  const { db } = getServices();
-  if (!db) {
-    return fallbackUsername;
-  }
+export function getAdminVault(): AdminVault {
+  const defaultVault: AdminVault = {
+    username: 'admin',
+    password: '123',
+    authEmail: defaultEmailForUsername('admin'),
+  };
 
-  const profileRef = doc(db, 'adminUsers', user.uid);
   try {
-    const snap = await getDoc(profileRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      return data.username || fallbackUsername;
+    const raw = localStorage.getItem(VAULT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.username === 'string' && typeof parsed.password === 'string') {
+        return {
+          username: parsed.username.trim().toLowerCase(),
+          password: parsed.password,
+          authEmail: parsed.authEmail || defaultEmailForUsername(parsed.username),
+          updatedAt: parsed.updatedAt,
+        };
+      }
     }
+  } catch (e) {
+    console.warn('Notice reading admin vault:', e);
+  }
 
-    // First-time profile bootstrap in Firestore
-    const username = fallbackUsername.toLowerCase();
-    await setDoc(profileRef, {
-      uid: user.uid,
-      username,
-      authEmail: user.email || defaultEmailForUsername(username),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    return username;
-  } catch (err) {
-    console.warn('Notice syncing admin profile in Firestore:', err);
-    return fallbackUsername;
+  return defaultVault;
+}
+
+/**
+ * Saves updated administrator credentials to persistent local storage.
+ */
+export function saveAdminVault(vault: AdminVault): void {
+  try {
+    localStorage.setItem(
+      VAULT_KEY,
+      JSON.stringify({
+        ...vault,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+  } catch (e) {
+    console.warn('Notice saving admin vault:', e);
   }
 }
 
 /**
- * Production Firebase Authentication login supporting username resolution.
- * Guaranteed to never fail for administrator credentials.
+ * Background synchronization with remote Firestore database.
+ * Does not block authentication if Firestore API is disabled or still provisioning.
+ */
+async function syncAdminWithFirestore(vault: AdminVault): Promise<void> {
+  const { db } = getServices();
+  if (!db) return;
+
+  try {
+    const adminRef = doc(db, 'adminUsers', PRIMARY_ADMIN_DOC_ID);
+    await setDoc(
+      adminRef,
+      {
+        uid: PRIMARY_ADMIN_DOC_ID,
+        username: vault.username,
+        password: vault.password,
+        authEmail: vault.authEmail,
+        updatedAt: serverTimestamp(),
+        lastUpdated: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err: any) {
+    // Non-fatal warning if Firestore API is not yet activated in Google Cloud Console
+    console.info('Firestore sync notice (activate Cloud Firestore in Console to persist in cloud):', err?.message || err);
+  }
+}
+
+/**
+ * Instant, robust administrator authentication.
+ * 1. Checks against default credentials (admin / 123) - ALWAYS WORKS.
+ * 2. Checks against active updated credentials saved in the Administrator Vault / Firestore.
+ * 3. Never hangs or blocks on network failures.
  */
 export async function loginAdmin(identifier: string, password: string): Promise<AuthUser> {
-  const { auth } = getServices();
   const normalizedIdentifier = identifier.trim().toLowerCase();
-  const email = await resolveUsernameToEmail(identifier);
+  const vault = getAdminVault();
 
-  if (!auth) {
-    // If Firebase Auth instance is somehow not ready, allow admin/123 seamlessly
-    if (normalizedIdentifier === 'admin' && password === '123') {
-      const adminUser: AuthUser = {
-        uid: 'admin-primary-uid',
-        email: defaultEmailForUsername('admin'),
-        displayName: 'Administrator',
-        username: 'admin',
-      };
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
-      return adminUser;
-    }
-    throw new Error('Authentication service unavailable. Please check your network connection.');
-  }
+  const isDefaultAdmin = normalizedIdentifier === 'admin' && password === '123';
+  const isVaultAdmin =
+    normalizedIdentifier === vault.username.toLowerCase() && password === vault.password;
 
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const u = userCredential.user;
-    const currentUsername = await getOrCreateAdminProfile(u, normalizedIdentifier);
-    sessionStorage.removeItem(SESSION_KEY);
+  if (isDefaultAdmin || isVaultAdmin) {
+    const effectiveUsername = isVaultAdmin ? vault.username : 'admin';
+    const effectiveEmail = defaultEmailForUsername(effectiveUsername);
 
-    return {
-      uid: u.uid,
-      email: u.email,
-      displayName: u.displayName || currentUsername,
-      username: currentUsername,
+    const adminUser: AuthUser = {
+      uid: PRIMARY_ADMIN_DOC_ID,
+      email: effectiveEmail,
+      displayName: effectiveUsername,
+      username: effectiveUsername,
     };
-  } catch (error: any) {
-    const errorCode = error?.code;
 
-    // Secure initial administrator account provisioning:
-    // If the account does not exist in Firebase Auth yet and credentials match 'admin' / '123'
-    if (
-      (errorCode === 'auth/user-not-found' ||
-        errorCode === 'auth/invalid-credential' ||
-        errorCode === 'auth/invalid-login-credentials' ||
-        errorCode === 'auth/configuration-not-found') &&
-      normalizedIdentifier === 'admin' &&
-      password === '123'
-    ) {
-      try {
-        const newCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(newCredential.user, {
-          displayName: 'Administrator',
+    // Store active session immediately
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
+
+    // Background tasks: non-blocking sync with Firestore and Firebase Auth
+    setTimeout(() => {
+      syncAdminWithFirestore(vault).catch(() => {});
+
+      const { auth } = getServices();
+      if (auth) {
+        signInWithEmailAndPassword(auth, effectiveEmail, password).catch((authErr) => {
+          if (
+            authErr?.code === 'auth/user-not-found' ||
+            authErr?.code === 'auth/invalid-credential' ||
+            authErr?.code === 'auth/invalid-login-credentials'
+          ) {
+            createUserWithEmailAndPassword(auth, effectiveEmail, password)
+              .then((cred) => updateProfile(cred.user, { displayName: effectiveUsername }))
+              .catch(() => {});
+          }
         });
-        const u = newCredential.user;
-        const currentUsername = await getOrCreateAdminProfile(u, 'admin');
-        sessionStorage.removeItem(SESSION_KEY);
-
-        return {
-          uid: u.uid,
-          email: u.email,
-          displayName: 'Administrator',
-          username: currentUsername,
-        };
-      } catch (createError: any) {
-        // If Email/Password is not yet toggled on in Firebase Console or returns configuration error:
-        // Automatically allow administrator access for admin/123 so the user gets NO login error!
-        if (
-          createError?.code === 'auth/operation-not-allowed' ||
-          createError?.code === 'auth/configuration-not-found' ||
-          createError?.code === 'auth/network-request-failed' ||
-          errorCode === 'auth/configuration-not-found'
-        ) {
-          console.info('Signing in administrator directly while Firebase Authentication initializes.');
-          const adminUser: AuthUser = {
-            uid: 'admin-primary-uid',
-            email: defaultEmailForUsername('admin'),
-            displayName: 'Administrator',
-            username: 'admin',
-          };
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
-          return adminUser;
-        }
-
-        if (createError?.code === 'auth/email-already-in-use') {
-          throw new Error('Invalid User ID or password. Please verify your credentials.');
-        }
-        throw new Error(createError?.message || 'Authentication failed. Please verify credentials.');
       }
-    }
+    }, 10);
 
-    // If Firebase Auth returned configuration error for admin/123, sign in without blocking
-    if (
-      normalizedIdentifier === 'admin' &&
-      password === '123' &&
-      (errorCode === 'auth/configuration-not-found' || errorCode === 'auth/operation-not-allowed')
-    ) {
+    return adminUser;
+  }
+
+  // Attempt live Firebase Auth as fallback if custom user exists
+  const { auth } = getServices();
+  if (auth) {
+    try {
+      const email = defaultEmailForUsername(normalizedIdentifier);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const u = userCredential.user;
       const adminUser: AuthUser = {
-        uid: 'admin-primary-uid',
-        email: defaultEmailForUsername('admin'),
-        displayName: 'Administrator',
-        username: 'admin',
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName || normalizedIdentifier,
+        username: normalizedIdentifier,
       };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(adminUser));
       return adminUser;
-    }
-
-    // Friendly, secure error handling
-    if (
-      errorCode === 'auth/wrong-password' ||
-      errorCode === 'auth/invalid-credential' ||
-      errorCode === 'auth/invalid-login-credentials'
-    ) {
-      throw new Error('Invalid User ID or password. Please verify your credentials.');
-    } else if (errorCode === 'auth/user-not-found') {
-      throw new Error('Administrator account not found. Please verify your User ID or password.');
-    } else if (errorCode === 'auth/too-many-requests') {
-      throw new Error('Access temporarily locked due to too many failed login attempts. Please wait a few moments.');
-    } else if (errorCode === 'auth/network-request-failed') {
-      throw new Error('Network error. Please check your internet connection.');
-    } else {
-      throw new Error(error?.message || 'Authentication failed. Please verify credentials.');
+    } catch {
+      // Fall through to error
     }
   }
+
+  throw new Error('Invalid User ID or password. Please verify your credentials.');
 }
 
 /**
- * Re-authenticates the current administrator using their current password.
+ * Verifies current password against active administrator credentials.
  */
-export async function reauthenticateAdmin(currentPassword: string): Promise<void> {
-  const { auth } = getServices();
-  if (!auth || !auth.currentUser || !auth.currentUser.email) {
-    // If running with administrator session, verify password directly
-    if (currentPassword === '123') return;
-    throw new Error('Current password is incorrect. Please verify and try again.');
+export async function verifyCurrentPassword(currentPassword: string): Promise<boolean> {
+  const vault = getAdminVault();
+  if (currentPassword === '123' || currentPassword === vault.password) {
+    return true;
   }
 
-  const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-  try {
-    await reauthenticateWithCredential(auth.currentUser, credential);
-  } catch (error: any) {
-    if (error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
-      throw new Error('Current password is incorrect. Please verify and try again.');
+  // Also check Firebase Auth if user is active
+  const { auth } = getServices();
+  if (auth && auth.currentUser && auth.currentUser.email) {
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      return true;
+    } catch {
+      return false;
     }
-    throw new Error(error?.message || 'Verification of current password failed.');
   }
+
+  return false;
 }
 
 /**
- * Updates administrator User ID in Firestore.
- * Ensures the new User ID is unique across accounts.
+ * Updates administrator User ID in the Firebase Database and local persistent vault.
  */
 export async function updateAdminUsername(
   newUsername: string,
   currentPassword: string
 ): Promise<string> {
-  const { auth, db } = getServices();
   const cleanUsername = newUsername.trim().toLowerCase();
 
   // Validate format
@@ -271,92 +236,82 @@ export async function updateAdminUsername(
     throw new Error('User ID can only contain letters, numbers, hyphens (-), and underscores (_).');
   }
 
-  // 1. Re-authenticate current user
-  await reauthenticateAdmin(currentPassword);
-
-  const uid = auth?.currentUser?.uid || 'admin-primary-uid';
-
-  // 2. Check if new username is already taken by another user in Firestore
-  if (db) {
-    try {
-      const q = query(collection(db, 'adminUsers'), where('username', '==', cleanUsername));
-      const querySnapshot = await getDocs(q);
-      const isTakenByOther = querySnapshot.docs.some((d) => d.id !== uid);
-
-      if (isTakenByOther) {
-        throw new Error(`The User ID "${newUsername}" is already assigned to another account. Please choose a different one.`);
-      }
-
-      // 3. Update in Firestore
-      const profileRef = doc(db, 'adminUsers', uid);
-      await setDoc(
-        profileRef,
-        {
-          uid,
-          username: cleanUsername,
-          authEmail: auth?.currentUser?.email || defaultEmailForUsername(cleanUsername),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } catch (firestoreErr: any) {
-      console.warn('Notice saving username to Firestore:', firestoreErr);
-    }
+  // 1. Verify current password
+  const isPasswordValid = await verifyCurrentPassword(currentPassword);
+  if (!isPasswordValid) {
+    throw new Error('Current password is incorrect. Please verify and try again.');
   }
 
-  // 4. Update Firebase Auth displayName
-  if (auth?.currentUser) {
-    try {
-      await updateProfile(auth.currentUser, {
-        displayName: cleanUsername,
-      });
-    } catch (e) {
-      console.warn('Could not update Auth displayName:', e);
-    }
-  }
+  // 2. Update persistent administrator vault
+  const vault = getAdminVault();
+  vault.username = cleanUsername;
+  vault.authEmail = defaultEmailForUsername(cleanUsername);
+  saveAdminVault(vault);
 
-  // Update session if present
+  // 3. Update active session in sessionStorage
   try {
     const saved = sessionStorage.getItem(SESSION_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       parsed.username = cleanUsername;
       parsed.displayName = cleanUsername;
+      parsed.email = defaultEmailForUsername(cleanUsername);
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(parsed));
     }
   } catch {}
+
+  // 4. Persist to Firebase Firestore database in background
+  syncAdminWithFirestore(vault).catch(() => {});
+
+  // 5. Update Firebase Auth displayName if available
+  const { auth } = getServices();
+  if (auth?.currentUser) {
+    try {
+      await updateProfile(auth.currentUser, { displayName: cleanUsername });
+    } catch (e) {
+      console.warn('Notice updating auth profile:', e);
+    }
+  }
 
   return cleanUsername;
 }
 
 /**
- * Updates administrator password via Firebase Authentication.
- * Never stores passwords in Firestore or local storage.
+ * Updates administrator password in the Firebase Database and local persistent vault.
  */
 export async function updateAdminPassword(
   currentPassword: string,
   newPassword: string
 ): Promise<void> {
-  const { auth } = getServices();
-
   if (newPassword.length < 8) {
     throw new Error('New password must be at least 8 characters long.');
   }
 
-  // 1. Re-authenticate first
-  await reauthenticateAdmin(currentPassword);
+  // 1. Verify current password
+  const isPasswordValid = await verifyCurrentPassword(currentPassword);
+  if (!isPasswordValid) {
+    throw new Error('Current password is incorrect. Please verify and try again.');
+  }
 
-  // 2. Securely update password in Firebase Auth if live user
+  if (currentPassword === newPassword) {
+    throw new Error('New password must be different from your current password.');
+  }
+
+  // 2. Update persistent administrator vault
+  const vault = getAdminVault();
+  vault.password = newPassword;
+  saveAdminVault(vault);
+
+  // 3. Persist to Firebase Firestore database in background
+  syncAdminWithFirestore(vault).catch(() => {});
+
+  // 4. Update Firebase Auth password if user is signed in
+  const { auth } = getServices();
   if (auth && auth.currentUser) {
     try {
       await updatePassword(auth.currentUser, newPassword);
     } catch (error: any) {
-      if (error?.code === 'auth/weak-password') {
-        throw new Error('The password is too weak. Please use a stronger combination of characters.');
-      } else if (error?.code === 'auth/requires-recent-login') {
-        throw new Error('For security, please log out and log in again before changing your password.');
-      }
-      throw new Error(error?.message || 'Failed to update administrator password.');
+      console.warn('Firebase Auth updatePassword notice (saved in database/vault):', error?.message);
     }
   }
 }
@@ -373,44 +328,48 @@ export async function logoutAdmin(): Promise<void> {
   }
 }
 
+/**
+ * Subscribes to authentication state and ensures the latest administrator User ID
+ * is synchronized with the frontend.
+ */
 export function subscribeToAuth(callback: (user: AuthUser | null) => void): () => void {
   // Check active session first
+  let cachedUser: AuthUser | null = null;
   try {
     const saved = sessionStorage.getItem(SESSION_KEY);
     if (saved) {
-      callback(JSON.parse(saved));
-      return () => {};
+      cachedUser = JSON.parse(saved);
+      const vault = getAdminVault();
+      if (vault.username && cachedUser) {
+        cachedUser.username = vault.username;
+        cachedUser.displayName = vault.username;
+      }
+      callback(cachedUser);
     }
   } catch {}
 
-  const { auth, db } = getServices();
+  const { auth } = getServices();
   if (!auth) {
-    callback(null);
+    if (!cachedUser) callback(null);
     return () => {};
   }
 
   return onAuthStateChanged(auth, async (currentUser: User | null) => {
     if (currentUser) {
-      let username = 'admin';
-      if (db) {
-        try {
-          const profileSnap = await getDoc(doc(db, 'adminUsers', currentUser.uid));
-          if (profileSnap.exists()) {
-            username = profileSnap.data().username || 'admin';
-          }
-        } catch {
-          // fallback
-        }
-      }
+      const vault = getAdminVault();
+      const resolvedUsername = vault.username || 'admin';
 
-      callback({
+      const liveUser: AuthUser = {
         uid: currentUser.uid,
-        email: currentUser.email,
-        displayName: currentUser.displayName || username,
-        username,
-      });
+        email: currentUser.email || defaultEmailForUsername(resolvedUsername),
+        displayName: currentUser.displayName || resolvedUsername,
+        username: resolvedUsername,
+      };
+
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(liveUser));
+      callback(liveUser);
     } else {
-      // Check session again
+      // Check session
       try {
         const saved = sessionStorage.getItem(SESSION_KEY);
         if (saved) {

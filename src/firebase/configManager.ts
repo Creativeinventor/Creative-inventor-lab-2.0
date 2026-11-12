@@ -12,13 +12,15 @@ const PROJECT_CONFIG: FirebaseConfig = {
 };
 
 export function getActiveFirebaseConfig(): FirebaseConfig {
-  const envApiKey = (import.meta.env.VITE_FIREBASE_API_KEY || '').trim();
-  const envAuthDomain = (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim();
-  const envProjectId = (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim();
-  const envStorageBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim();
-  const envMessagingSenderId = (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim();
-  const envAppId = (import.meta.env.VITE_FIREBASE_APP_ID || '').trim();
-  const envMeasurementId = (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '').trim();
+  const metaEnv: Record<string, string | undefined> =
+    typeof import.meta !== 'undefined' && import.meta.env ? (import.meta.env as Record<string, string | undefined>) : {};
+  const envApiKey = (metaEnv.VITE_FIREBASE_API_KEY || '').trim();
+  const envAuthDomain = (metaEnv.VITE_FIREBASE_AUTH_DOMAIN || '').trim();
+  const envProjectId = (metaEnv.VITE_FIREBASE_PROJECT_ID || '').trim();
+  const envStorageBucket = (metaEnv.VITE_FIREBASE_STORAGE_BUCKET || '').trim();
+  const envMessagingSenderId = (metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim();
+  const envAppId = (metaEnv.VITE_FIREBASE_APP_ID || '').trim();
+  const envMeasurementId = (metaEnv.VITE_FIREBASE_MEASUREMENT_ID || '').trim();
 
   // If environment variables are set and not placeholder templates, prioritize them
   if (

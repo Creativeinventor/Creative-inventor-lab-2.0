@@ -29,9 +29,13 @@ export interface AuthUser {
 export interface AdminUserProfile {
   uid: string;
   username: string;
+  password?: string;
   authEmail: string;
   updatedAt?: any;
   createdAt?: any;
+  lastUpdated?: string;
+  lastPasswordChange?: any;
+  lastLoginAt?: any;
 }
 
 export type FileCategory =

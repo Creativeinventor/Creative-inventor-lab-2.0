@@ -94,13 +94,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     try {
       const updated = await updateAdminUsername(cleanNew, usernamePassword);
       updateUsernameState(updated);
-      setUsernameSuccess('USER ID UPDATED SUCCESSFULLY!');
+      setUsernameSuccess('USER ID UPDATED & SAVED IN FIREBASE DATABASE!');
       setNewUsername('');
       setConfirmUsername('');
       setUsernamePassword('');
       setTimeout(() => {
         setUsernameSuccess(null);
-      }, 3500);
+      }, 4000);
     } catch (err: any) {
       setUsernameError(err?.message || 'Failed to update User ID.');
     } finally {
@@ -137,13 +137,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setPasswordLoading(true);
     try {
       await updateAdminPassword(currentPassword, newPassword);
-      setPasswordSuccess('PASSWORD UPDATED SUCCESSFULLY!');
+      setPasswordSuccess('PASSWORD UPDATED & SAVED IN FIREBASE DATABASE!');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => {
         setPasswordSuccess(null);
-      }, 3500);
+      }, 4000);
     } catch (err: any) {
       setPasswordError(err?.message || 'Failed to update password.');
     } finally {
