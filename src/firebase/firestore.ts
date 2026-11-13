@@ -4,6 +4,7 @@ import {
   deleteDoc,
   setDoc,
   getDocs,
+  getDocFromServer,
   doc,
   onSnapshot,
   query,
@@ -11,8 +12,9 @@ import {
   serverTimestamp,
   QuerySnapshot,
   DocumentData,
+  Firestore,
 } from 'firebase/firestore';
-import { getServices } from './firebase';
+import { getServices, getProvisionedPublicDb } from './firebase';
 import { UploadedFileRecord } from '../types';
 
 export enum OperationType {
@@ -338,50 +340,79 @@ export function subscribeToPublicProjectLinks(
   onError?: (error: any) => void
 ): () => void {
   const { db } = getServices();
-  if (!db) {
+  const provisionedDb = getProvisionedPublicDb();
+
+  const targets: Firestore[] = [];
+  if (db) targets.push(db);
+  if (provisionedDb && provisionedDb !== db) targets.push(provisionedDb);
+
+  if (targets.length === 0) {
     onUpdate([]);
     return () => {};
   }
 
   let isDisposed = false;
-  let receivedLiveUpdate = false;
+  const itemsBySource = new Map<number, UploadedFileRecord[]>();
+  const unsubs: Array<() => void> = [];
 
-  // Immediate one-shot REST/fetch read so mobile browsers with slow/blocked
-  // streaming WebChannels still load all shared files & folders immediately.
-  getDocs(collection(db, 'projectLinks'))
-    .then((snapshot) => {
-      if (isDisposed || receivedLiveUpdate) return;
-      onUpdate(mapSnapshotToProjectLinks(snapshot));
-    })
-    .catch((err) => {
-      if (isDisposed) return;
-      if (onError) onError(err);
-    });
+  // Validate connection cleanly on boot
+  getDocFromServer(doc(targets[0], 'projectLinks', '_connection_check')).catch(() => {});
 
-  try {
-    const unsub = onSnapshot(
-      collection(db, 'projectLinks'),
-      (snapshot) => {
-        if (isDisposed) return;
-        receivedLiveUpdate = true;
-        onUpdate(mapSnapshotToProjectLinks(snapshot));
-      },
-      (error) => {
-        if (isDisposed) return;
-        console.warn('projectLinks subscription notice:', error?.code || error?.message);
-        if (onError) onError(error);
+  const emitMerged = () => {
+    if (isDisposed) return;
+    const merged = new Map<string, UploadedFileRecord>();
+    for (const list of itemsBySource.values()) {
+      for (const item of list) {
+        merged.set(item.id, item);
       }
-    );
+    }
+    onUpdate(Array.from(merged.values()));
+  };
 
-    return () => {
-      isDisposed = true;
-      unsub();
-    };
-  } catch (err) {
-    if (onError) onError(err);
-    return () => {
-      isDisposed = true;
-    };
-  }
+  targets.forEach((targetDb, idx) => {
+    let receivedLive = false;
+
+    getDocs(collection(targetDb, 'projectLinks'))
+      .then((snapshot) => {
+        if (isDisposed || receivedLive) return;
+        itemsBySource.set(idx, mapSnapshotToProjectLinks(snapshot));
+        emitMerged();
+      })
+      .catch((err) => {
+        if (isDisposed) return;
+        if (idx === 0 && onError) onError(err);
+      });
+
+    try {
+      const unsub = onSnapshot(
+        collection(targetDb, 'projectLinks'),
+        (snapshot) => {
+          if (isDisposed) return;
+          receivedLive = true;
+          itemsBySource.set(idx, mapSnapshotToProjectLinks(snapshot));
+          emitMerged();
+        },
+        (error) => {
+          if (isDisposed) return;
+          console.warn('projectLinks subscription notice:', error?.code || error?.message);
+          if (idx === 0 && onError) onError(error);
+        }
+      );
+      unsubs.push(unsub);
+    } catch (err) {
+      if (idx === 0 && onError) onError(err);
+    }
+  });
+
+  return () => {
+    isDisposed = true;
+    unsubs.forEach((u) => {
+      try {
+        u();
+      } catch {
+        // Ignore cleanup error
+      }
+    });
+  };
 }
 
