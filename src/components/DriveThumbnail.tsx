@@ -38,11 +38,11 @@ export const DriveThumbnail: React.FC<DriveThumbnailProps> = ({
 }) => {
   const category = isFolder ? 'folder' : getFileCategory(fileName, mimeType);
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
-  const [imgFailed, setImgFailed] = useState(false);
+  const [fallbackStage, setFallbackStage] = useState<0 | 1 | 2>(0);
 
   useEffect(() => {
     let active = true;
-    setImgFailed(false);
+    setFallbackStage(0);
 
     if (isFolder) {
       setResolvedUrl(null);
@@ -66,10 +66,18 @@ export const DriveThumbnail: React.FC<DriveThumbnailProps> = ({
     };
   }, [driveFileId, driveAccountEmail, mimeType, thumbnailLink, isFolder, category]);
 
+  const publicDriveThumbUrl =
+    !isFolder && driveFileId
+      ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveFileId)}&sz=w480`
+      : undefined;
+
   const directUrl =
     resolvedUrl ||
-    thumbnailLink ||
-    (!driveFileId && category === 'image' ? downloadURL : undefined);
+    (fallbackStage === 0
+      ? thumbnailLink || publicDriveThumbUrl || (category === 'image' ? downloadURL : undefined)
+      : fallbackStage === 1 && thumbnailLink && publicDriveThumbUrl && thumbnailLink !== publicDriveThumbUrl
+      ? publicDriveThumbUrl
+      : undefined);
 
   const dimClass =
     size === 'sm'
@@ -95,7 +103,7 @@ export const DriveThumbnail: React.FC<DriveThumbnailProps> = ({
     );
   }
 
-  if (directUrl && !imgFailed) {
+  if (directUrl && fallbackStage < 2) {
     return (
       <div
         onClick={onClick}
@@ -108,7 +116,9 @@ export const DriveThumbnail: React.FC<DriveThumbnailProps> = ({
           alt={fileName}
           referrerPolicy="no-referrer"
           loading="lazy"
-          onError={() => setImgFailed(true)}
+          onError={() => {
+            setFallbackStage((prev) => (prev === 0 && publicDriveThumbUrl && thumbnailLink ? 1 : 2));
+          }}
           className="w-full h-full object-cover group-hover/img:scale-105 transition duration-300"
         />
       </div>

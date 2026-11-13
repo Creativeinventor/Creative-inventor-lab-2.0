@@ -79,18 +79,40 @@ export const FileList: React.FC<FileListProps> = ({
 
   // Subscribe to public projectLinks collection (cross-device shared list)
   useEffect(() => {
-    const unsub = subscribeToPublicProjectLinks((items) => {
-      setCloudProjectLinks(items);
-    });
+    let resolved = false;
+    const safetyTimer = setTimeout(() => {
+      if (!resolved && readOnly) {
+        setLoading(false);
+      }
+    }, 2500);
+
+    const unsub = subscribeToPublicProjectLinks(
+      (items) => {
+        resolved = true;
+        clearTimeout(safetyTimer);
+        setCloudProjectLinks(items);
+        if (readOnly) {
+          setLoading(false);
+        }
+      },
+      () => {
+        resolved = true;
+        clearTimeout(safetyTimer);
+        if (readOnly) {
+          setLoading(false);
+        }
+      }
+    );
+
     return () => {
+      clearTimeout(safetyTimer);
       if (typeof unsub === 'function') unsub();
     };
-  }, [refreshTrigger]);
+  }, [refreshTrigger, readOnly]);
 
   // Subscribe to real-time updates from Firestore (only in Admin mode)
   useEffect(() => {
     if (readOnly) {
-      setLoading(false);
       return;
     }
 
@@ -144,11 +166,13 @@ export const FileList: React.FC<FileListProps> = ({
 
   const driveAccountsInLinks = useMemo(() => {
     const emails = new Set<string>();
-    for (const item of driveLinks) {
-      if (item.driveAccountEmail) emails.add(item.driveAccountEmail);
+    for (const item of files) {
+      if (item.source === 'google-drive' && item.driveAccountEmail) {
+        emails.add(item.driveAccountEmail);
+      }
     }
     return Array.from(emails);
-  }, [driveLinks]);
+  }, [files]);
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);

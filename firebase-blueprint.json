@@ -44,12 +44,42 @@
         }
       },
       "required": ["fileName", "fileType", "fileSize", "storagePath", "downloadURL", "uploadedBy"]
+    },
+    "ProjectLink": {
+      "title": "ProjectLink",
+      "description": "Publicly readable Google Drive file or folder link curated by the authorized administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 255 },
+        "fileName": { "type": "string", "maxLength": 300 },
+        "fileType": { "type": "string", "maxLength": 150 },
+        "fileSize": { "type": "number" },
+        "storagePath": { "type": "string", "maxLength": 500 },
+        "downloadURL": { "type": "string", "maxLength": 2048 },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "uploadedBy": { "type": "string", "maxLength": 320 },
+        "source": { "type": "string", "maxLength": 50 },
+        "isFolder": { "type": "boolean" },
+        "driveFileId": { "type": "string", "maxLength": 255 },
+        "driveAccountEmail": { "type": "string", "maxLength": 320 },
+        "driveAccountName": { "type": "string", "maxLength": 200 },
+        "driveAccountPhoto": { "type": "string", "maxLength": 2048 },
+        "thumbnailLink": { "type": "string", "maxLength": 2048 },
+        "iconLink": { "type": "string", "maxLength": 2048 },
+        "webViewLink": { "type": "string", "maxLength": 2048 },
+        "webContentLink": { "type": "string", "maxLength": 2048 }
+      },
+      "required": ["id", "fileName", "source", "isFolder"]
     }
   },
   "firestore": {
     "/uploadedFiles/{fileId}": {
       "schema": "UploadedFile",
       "description": "Collection of uploaded file metadata"
+    },
+    "/projectLinks/{linkId}": {
+      "schema": "ProjectLink",
+      "description": "Publicly readable curated Google Drive file and folder links"
     }
   }
 }

@@ -39,6 +39,46 @@ interface InMemoryDriveSession {
 const activeSessions = new Map<string, InMemoryDriveSession>();
 const thumbnailBlobCache = new Map<string, string>();
 const listeners = new Set<() => void>();
+const cloudSyncListeners = new Set<(state: CloudSyncState) => void>();
+
+export interface CloudSyncState {
+  status: 'idle' | 'syncing' | 'synced' | 'error';
+  totalCount: number;
+  syncedCount: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+let cloudSyncState: CloudSyncState = {
+  status: 'idle',
+  totalCount: 0,
+  syncedCount: 0,
+};
+
+function updateCloudSyncState(next: CloudSyncState) {
+  cloudSyncState = next;
+  cloudSyncListeners.forEach((cb) => {
+    try {
+      cb(cloudSyncState);
+    } catch {
+      // Ignore subscriber error
+    }
+  });
+}
+
+export function getCloudSyncState(): CloudSyncState {
+  return cloudSyncState;
+}
+
+export function subscribeToCloudSyncState(
+  listener: (state: CloudSyncState) => void
+): () => void {
+  cloudSyncListeners.add(listener);
+  listener(cloudSyncState);
+  return () => {
+    cloudSyncListeners.delete(listener);
+  };
+}
 
 let driveAppInstance: FirebaseApp | null = null;
 let driveAuthInstance: Auth | null = null;
@@ -506,9 +546,37 @@ export function addLinkedDriveItems(
   }
 
   saveLinkedDriveItemsList(Array.from(byId.values()));
-  added.forEach((rec) => {
-    publishProjectLink(rec).catch(() => {});
-  });
+
+  if (added.length > 0) {
+    updateCloudSyncState({
+      status: 'syncing',
+      totalCount: added.length,
+      syncedCount: 0,
+    });
+
+    Promise.all(added.map((rec) => publishProjectLink(rec)))
+      .then((results) => {
+        const failed = results.find((r) => !r.ok);
+        const syncedCount = results.filter((r) => r.ok).length;
+        if (failed) {
+          updateCloudSyncState({
+            status: 'error',
+            totalCount: added.length,
+            syncedCount,
+            errorCode: failed.errorCode,
+            errorMessage: failed.errorMessage,
+          });
+        } else {
+          updateCloudSyncState({
+            status: 'synced',
+            totalCount: byId.size,
+            syncedCount: byId.size,
+          });
+        }
+      })
+      .catch(() => {});
+  }
+
   return added;
 }
 
@@ -516,7 +584,63 @@ export function removeLinkedDriveItem(recordId: string) {
   const existing = getLinkedDriveItems();
   const filtered = existing.filter((item) => item.id !== recordId);
   saveLinkedDriveItemsList(filtered);
-  unpublishProjectLink(recordId).catch(() => {});
+  unpublishProjectLink(recordId)
+    .then((res) => {
+      if (!res.ok) {
+        updateCloudSyncState({
+          status: 'error',
+          totalCount: filtered.length,
+          syncedCount: 0,
+          errorCode: res.errorCode,
+          errorMessage: res.errorMessage,
+        });
+      }
+    })
+    .catch(() => {});
+}
+
+/**
+ * Publishes all currently stored local Drive links to Firestore `projectLinks`
+ * so visitors on every phone & browser see the curated Project files list.
+ */
+export async function syncAllLinkedItemsToCloud(): Promise<CloudSyncState> {
+  const items = getLinkedDriveItems();
+  if (items.length === 0) {
+    const emptyState: CloudSyncState = {
+      status: 'idle',
+      totalCount: 0,
+      syncedCount: 0,
+    };
+    updateCloudSyncState(emptyState);
+    return emptyState;
+  }
+
+  updateCloudSyncState({
+    status: 'syncing',
+    totalCount: items.length,
+    syncedCount: 0,
+  });
+
+  const results = await Promise.all(items.map((item) => publishProjectLink(item)));
+  const syncedCount = results.filter((r) => r.ok).length;
+  const firstFailure = results.find((r) => !r.ok);
+
+  const nextState: CloudSyncState = firstFailure
+    ? {
+        status: 'error',
+        totalCount: items.length,
+        syncedCount,
+        errorCode: firstFailure.errorCode,
+        errorMessage: firstFailure.errorMessage,
+      }
+    : {
+        status: 'synced',
+        totalCount: items.length,
+        syncedCount,
+      };
+
+  updateCloudSyncState(nextState);
+  return nextState;
 }
 
 /**

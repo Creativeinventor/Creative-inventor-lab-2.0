@@ -40,10 +40,41 @@ service cloud.firestore {
       allow delete: if isAuthorizedAdmin() && isValidId(fileId);
     }
 
+    function isValidProjectLink(data) {
+      return data.keys().hasAll(['id', 'fileName', 'source', 'isFolder']) &&
+        data.keys().hasOnly([
+          'id', 'fileName', 'fileType', 'fileSize', 'storagePath', 'downloadURL',
+          'uploadedAt', 'uploadedBy', 'source', 'isFolder', 'driveFileId',
+          'driveAccountEmail', 'driveAccountName', 'driveAccountPhoto',
+          'thumbnailLink', 'iconLink', 'webViewLink', 'webContentLink'
+        ]) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 255 &&
+        data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 300 &&
+        data.source is string && data.source.size() <= 50 &&
+        data.isFolder is bool &&
+        (!('fileType' in data) || (data.fileType is string && data.fileType.size() <= 150)) &&
+        (!('fileSize' in data) || (data.fileSize is number && data.fileSize >= 0)) &&
+        (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() <= 500)) &&
+        (!('downloadURL' in data) || (data.downloadURL is string && data.downloadURL.size() <= 2048)) &&
+        (!('uploadedAt' in data) || (data.uploadedAt is string && data.uploadedAt.size() <= 64)) &&
+        (!('uploadedBy' in data) || (data.uploadedBy is string && data.uploadedBy.size() <= 320)) &&
+        (!('driveFileId' in data) || (data.driveFileId is string && data.driveFileId.size() <= 255)) &&
+        (!('driveAccountEmail' in data) || (data.driveAccountEmail is string && data.driveAccountEmail.size() <= 320)) &&
+        (!('driveAccountName' in data) || (data.driveAccountName is string && data.driveAccountName.size() <= 200)) &&
+        (!('driveAccountPhoto' in data) || (data.driveAccountPhoto is string && data.driveAccountPhoto.size() <= 2048)) &&
+        (!('thumbnailLink' in data) || (data.thumbnailLink is string && data.thumbnailLink.size() <= 2048)) &&
+        (!('iconLink' in data) || (data.iconLink is string && data.iconLink.size() <= 2048)) &&
+        (!('webViewLink' in data) || (data.webViewLink is string && data.webViewLink.size() <= 2048)) &&
+        (!('webContentLink' in data) || (data.webContentLink is string && data.webContentLink.size() <= 2048));
+    }
+
     // Publicly viewable Google Drive file/folder links selected by Admin
     match /projectLinks/{linkId} {
       allow read, list: if true;
-      allow create, update, delete: if isAuthorizedAdmin();
+      allow create, update: if isAuthorizedAdmin() &&
+        isValidId(linkId) &&
+        isValidProjectLink(request.resource.data);
+      allow delete: if isAuthorizedAdmin() && isValidId(linkId);
     }
   }
 }

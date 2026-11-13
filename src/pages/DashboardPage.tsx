@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navbar } from '../components/Navbar';
 import { FileUpload } from '../components/FileUpload';
 import { FileList } from '../components/FileList';
@@ -6,11 +6,48 @@ import { FilePreviewModal } from '../components/FilePreviewModal';
 import { GoogleDriveConnectModal } from '../components/GoogleDriveConnectModal';
 import { UploadedFileRecord } from '../types';
 import {
+  CloudSyncState,
   connectGoogleDriveAccount,
   getKnownAndConnectedDriveAccounts,
+  subscribeToCloudSyncState,
+  syncAllLinkedItemsToCloud,
   syncLinkedItemsWithDrive,
 } from '../firebase/googleDrive';
-import { Sparkles, AlertCircle } from 'lucide-react';
+import { getActiveFirebaseConfig } from '../firebase/configManager';
+import {
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Check,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react';
+
+const PUBLIC_PROJECT_LINKS_RULES = `rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isAuthorizedAdmin() {
+      return request.auth != null &&
+        request.auth.token.email == '20sgamingrohit@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    match /uploadedFiles/{fileId} {
+      allow read, list, create, update, delete: if isAuthorizedAdmin();
+    }
+
+    match /projectLinks/{linkId} {
+      allow read, list: if true;
+      allow create, update, delete: if isAuthorizedAdmin();
+    }
+  }
+}`;
 
 interface DashboardPageProps {
   onViewFrontPage?: () => void;
@@ -23,6 +60,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
   const [driveModalOpen, setDriveModalOpen] = useState(false);
   const [driveModalAccount, setDriveModalAccount] = useState<string | null>(null);
   const [topDriveError, setTopDriveError] = useState<string | null>(null);
+
+  const [cloudSync, setCloudSync] = useState<CloudSyncState>({
+    status: 'idle',
+    totalCount: 0,
+    syncedCount: 0,
+  });
+  const [copiedRules, setCopiedRules] = useState(false);
+
+  const activeProjectId = getActiveFirebaseConfig().projectId;
+
+  useEffect(() => {
+    const unsub = subscribeToCloudSyncState(setCloudSync);
+    syncAllLinkedItemsToCloud().catch(() => {});
+    return unsub;
+  }, []);
+
+  const handleCopyRules = async () => {
+    try {
+      await navigator.clipboard.writeText(PUBLIC_PROJECT_LINKS_RULES);
+      setCopiedRules(true);
+      setTimeout(() => setCopiedRules(false), 2500);
+    } catch {
+      // Fallback ignored
+    }
+  };
 
   const handleUploadSuccess = () => {
     setRefreshTrigger((prev) => prev + 1);
@@ -63,11 +125,91 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-10">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-8">
         {topDriveError && !driveModalOpen && (
           <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <span>{topDriveError}</span>
+          </div>
+        )}
+
+        {/* Cross-Device Publishing Status Banner (Admin Only) */}
+        {cloudSync.status === 'error' && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-100 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1 text-xs sm:text-sm">
+                <p className="font-bold text-white">
+                  Action Required to Show Selected Files on All Phones &amp; Browsers
+                </p>
+                <p className="text-amber-200/90 leading-relaxed">
+                  Your selected files are saved in this browser, but syncing them to Firestore (
+                  <code className="px-1.5 py-0.5 rounded bg-slate-950/60 font-mono text-amber-300">
+                    {activeProjectId}
+                  </code>
+                  ) was blocked ({cloudSync.errorCode || cloudSync.errorMessage}). Until Firestore
+                  Rules allow <code className="font-mono">projectLinks</code> public read + admin
+                  write, other phones will show blank below <em>Project files</em>.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-8">
+              <button
+                type="button"
+                onClick={handleCopyRules}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-100 text-xs font-semibold cursor-pointer transition"
+              >
+                {copiedRules ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Rules Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Copy Firestore Rules</span>
+                  </>
+                )}
+              </button>
+              <a
+                href={`https://console.firebase.google.com/project/${activeProjectId}/firestore/rules`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition"
+              >
+                <span>Open Firebase Rules</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => syncAllLinkedItemsToCloud()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 text-xs font-semibold cursor-pointer transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry Sync to All Phones</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {cloudSync.status === 'synced' && cloudSync.totalCount > 0 && (
+          <div className="px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-200 text-xs flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                Published <strong>{cloudSync.syncedCount}</strong> selected item
+                {cloudSync.syncedCount === 1 ? '' : 's'} to <strong>Project files</strong> (visible
+                across all phones &amp; browsers).
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => syncAllLinkedItemsToCloud()}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-white cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Re-sync</span>
+            </button>
           </div>
         )}
 

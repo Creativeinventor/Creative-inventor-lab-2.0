@@ -3,11 +3,14 @@ import {
   addDoc,
   deleteDoc,
   setDoc,
+  getDocs,
   doc,
   onSnapshot,
   query,
   orderBy,
   serverTimestamp,
+  QuerySnapshot,
+  DocumentData,
 } from 'firebase/firestore';
 import { getServices } from './firebase';
 import { UploadedFileRecord } from '../types';
@@ -207,91 +210,178 @@ function safeDocId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
 }
 
+export interface CloudWriteResult {
+  ok: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+function mapSnapshotToProjectLinks(snapshot: QuerySnapshot<DocumentData>): UploadedFileRecord[] {
+  return snapshot.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: data.id || d.id,
+      fileName: data.fileName || 'Untitled',
+      fileType: data.fileType || '',
+      fileSize: Number(data.fileSize || 0),
+      storagePath: data.storagePath || '',
+      downloadURL: data.downloadURL || '',
+      uploadedAt: data.uploadedAt,
+      uploadedBy: data.uploadedBy || '',
+      source: data.source || 'google-drive',
+      isFolder: Boolean(data.isFolder),
+      driveFileId: data.driveFileId,
+      driveAccountEmail: data.driveAccountEmail,
+      driveAccountName: data.driveAccountName,
+      driveAccountPhoto: data.driveAccountPhoto,
+      thumbnailLink: data.thumbnailLink || undefined,
+      iconLink: data.iconLink || undefined,
+      webViewLink: data.webViewLink || undefined,
+      webContentLink: data.webContentLink || undefined,
+    };
+  });
+}
+
+function clampStr(val: unknown, maxLen: number): string {
+  if (typeof val !== 'string') return '';
+  return val.length > maxLen ? val.slice(0, maxLen) : val;
+}
+
 /**
- * Best-effort cloud sync for Google Drive links to Firestore `projectLinks`
- * so public visitors across devices see the same curated list when Firestore is active.
- * Never throws or blocks local persistence if Firestore is unprovisioned.
+ * Syncs a linked Google Drive item to Firestore `projectLinks`
+ * so public visitors across ALL phones and browsers see the curated list.
  */
-export async function publishProjectLink(record: UploadedFileRecord): Promise<void> {
+export async function publishProjectLink(record: UploadedFileRecord): Promise<CloudWriteResult> {
   const { db } = getServices();
-  if (!db) return;
+  if (!db) {
+    return {
+      ok: false,
+      errorCode: 'firestore-not-initialized',
+      errorMessage: 'Firestore is not initialized.',
+    };
+  }
+
   try {
-    await setDoc(doc(db, 'projectLinks', safeDocId(record.id)), {
-      id: record.id,
-      fileName: record.fileName,
-      fileType: record.fileType || '',
-      fileSize: record.fileSize || 0,
-      storagePath: record.storagePath || '',
-      downloadURL: record.downloadURL || '',
-      uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : new Date().toISOString(),
-      uploadedBy: record.uploadedBy || '',
-      source: record.source || 'google-drive',
-      isFolder: Boolean(record.isFolder),
-      driveFileId: record.driveFileId || '',
-      driveAccountEmail: record.driveAccountEmail || '',
-      driveAccountName: record.driveAccountName || '',
-      driveAccountPhoto: record.driveAccountPhoto || '',
-      thumbnailLink: record.thumbnailLink || '',
-      iconLink: record.iconLink || '',
-      webViewLink: record.webViewLink || '',
-      webContentLink: record.webContentLink || '',
-    });
-  } catch {
-    // Non-fatal fallback: localStorage persistence remains active
+    const uploadedAtIso =
+      typeof record.uploadedAt === 'string'
+        ? clampStr(record.uploadedAt, 64)
+        : new Date().toISOString();
+
+    await Promise.race([
+      setDoc(doc(db, 'projectLinks', safeDocId(record.id)), {
+        id: clampStr(record.id, 255),
+        fileName: clampStr(record.fileName || 'Untitled', 300),
+        fileType: clampStr(record.fileType || '', 150),
+        fileSize: Math.max(0, Number(record.fileSize || 0)),
+        storagePath: clampStr(record.storagePath || '', 500),
+        downloadURL: clampStr(record.downloadURL || '', 2048),
+        uploadedAt: uploadedAtIso,
+        uploadedBy: clampStr(record.uploadedBy || '', 320),
+        source: clampStr(record.source || 'google-drive', 50),
+        isFolder: Boolean(record.isFolder),
+        driveFileId: clampStr(record.driveFileId || '', 255),
+        driveAccountEmail: clampStr(record.driveAccountEmail || '', 320),
+        driveAccountName: clampStr(record.driveAccountName || '', 200),
+        driveAccountPhoto: clampStr(record.driveAccountPhoto || '', 2048),
+        thumbnailLink: clampStr(record.thumbnailLink || '', 2048),
+        iconLink: clampStr(record.iconLink || '', 2048),
+        webViewLink: clampStr(record.webViewLink || '', 2048),
+        webContentLink: clampStr(record.webContentLink || '', 2048),
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Cloud sync timed out.')), 10000)
+      ),
+    ]);
+    return { ok: true };
+  } catch (err: any) {
+    const code = err?.code || '';
+    const message = err?.message || 'Could not publish link to Firestore.';
+    console.warn('publishProjectLink notice:', code, message);
+    return {
+      ok: false,
+      errorCode: code || 'write-failed',
+      errorMessage: message,
+    };
   }
 }
 
-export async function unpublishProjectLink(recordId: string): Promise<void> {
+export async function unpublishProjectLink(recordId: string): Promise<CloudWriteResult> {
   const { db } = getServices();
-  if (!db) return;
+  if (!db) {
+    return {
+      ok: false,
+      errorCode: 'firestore-not-initialized',
+      errorMessage: 'Firestore is not initialized.',
+    };
+  }
   try {
     await deleteDoc(doc(db, 'projectLinks', safeDocId(recordId)));
-  } catch {
-    // Non-fatal
+    return { ok: true };
+  } catch (err: any) {
+    return {
+      ok: false,
+      errorCode: err?.code || 'delete-failed',
+      errorMessage: err?.message || 'Could not remove link from Firestore.',
+    };
   }
+}
+
+export async function fetchPublicProjectLinks(): Promise<UploadedFileRecord[]> {
+  const { db } = getServices();
+  if (!db) return [];
+  const snapshot = await getDocs(collection(db, 'projectLinks'));
+  return mapSnapshotToProjectLinks(snapshot);
 }
 
 export function subscribeToPublicProjectLinks(
-  onUpdate: (items: UploadedFileRecord[]) => void
+  onUpdate: (items: UploadedFileRecord[]) => void,
+  onError?: (error: any) => void
 ): () => void {
   const { db } = getServices();
-  if (!db) return () => {};
+  if (!db) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  let isDisposed = false;
+  let receivedLiveUpdate = false;
+
+  // Immediate one-shot REST/fetch read so mobile browsers with slow/blocked
+  // streaming WebChannels still load all shared files & folders immediately.
+  getDocs(collection(db, 'projectLinks'))
+    .then((snapshot) => {
+      if (isDisposed || receivedLiveUpdate) return;
+      onUpdate(mapSnapshotToProjectLinks(snapshot));
+    })
+    .catch((err) => {
+      if (isDisposed) return;
+      if (onError) onError(err);
+    });
 
   try {
-    return onSnapshot(
+    const unsub = onSnapshot(
       collection(db, 'projectLinks'),
       (snapshot) => {
-        const items: UploadedFileRecord[] = snapshot.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: data.id || d.id,
-            fileName: data.fileName || 'Untitled',
-            fileType: data.fileType || '',
-            fileSize: Number(data.fileSize || 0),
-            storagePath: data.storagePath || '',
-            downloadURL: data.downloadURL || '',
-            uploadedAt: data.uploadedAt,
-            uploadedBy: data.uploadedBy || '',
-            source: data.source || 'google-drive',
-            isFolder: Boolean(data.isFolder),
-            driveFileId: data.driveFileId,
-            driveAccountEmail: data.driveAccountEmail,
-            driveAccountName: data.driveAccountName,
-            driveAccountPhoto: data.driveAccountPhoto,
-            thumbnailLink: data.thumbnailLink || undefined,
-            iconLink: data.iconLink || undefined,
-            webViewLink: data.webViewLink || undefined,
-            webContentLink: data.webContentLink || undefined,
-          };
-        });
-        onUpdate(items);
+        if (isDisposed) return;
+        receivedLiveUpdate = true;
+        onUpdate(mapSnapshotToProjectLinks(snapshot));
       },
-      () => {
-        // Silently ignore if Firestore projectLinks is unavailable
+      (error) => {
+        if (isDisposed) return;
+        console.warn('projectLinks subscription notice:', error?.code || error?.message);
+        if (onError) onError(error);
       }
     );
-  } catch {
-    return () => {};
+
+    return () => {
+      isDisposed = true;
+      unsub();
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return () => {
+      isDisposed = true;
+    };
   }
 }
 
