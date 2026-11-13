@@ -3,6 +3,8 @@ import {
   Sparkles,
   AlertCircle,
   ShieldCheck,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -41,6 +43,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
+
+  const currentDomain = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isDomainError = Boolean(
+    errorMessage && errorMessage.includes('not authorized in Firebase Authentication')
+  );
 
   useEffect(() => {
     if (authError) {
@@ -48,8 +56,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
     }
   }, [authError]);
 
+  const handleCopyDomain = async () => {
+    if (!currentDomain) return;
+    try {
+      await navigator.clipboard.writeText(currentDomain);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2500);
+    } catch {
+      // Clipboard fallback ignored
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
+    setCopiedDomain(false);
     clearAuthError();
     setIsLoading(true);
 
@@ -110,10 +130,37 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
           {errorMessage && (
             <div
               role="alert"
-              className="mb-6 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs sm:text-sm text-red-300 animate-in fade-in"
+              className="mb-6 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl flex flex-col gap-2.5 text-xs sm:text-sm text-red-300 animate-in fade-in"
             >
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-              <div className="leading-relaxed font-medium">{errorMessage}</div>
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
+                <div className="leading-relaxed font-medium break-words">{errorMessage}</div>
+              </div>
+
+              {isDomainError && currentDomain && (
+                <div className="pt-2 border-t border-red-500/20 flex items-center justify-between gap-2">
+                  <code className="text-[11px] font-mono text-red-200 bg-slate-950/70 px-2 py-1 rounded-lg truncate select-all">
+                    {currentDomain}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyDomain}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-400/30 text-red-100 text-[11px] font-semibold transition cursor-pointer"
+                  >
+                    {copiedDomain ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy Domain</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
