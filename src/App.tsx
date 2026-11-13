@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { PublicFrontPage } from './pages/PublicFrontPage';
+import { syncAllLinkedItemsToCloud } from './firebase/googleDrive';
 import { Sparkles, AlertTriangle } from 'lucide-react';
 
 interface ErrorBoundaryState {
@@ -54,6 +55,12 @@ type ViewMode = 'public' | 'admin-login' | 'admin';
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('public');
+
+  useEffect(() => {
+    if (user) {
+      syncAllLinkedItemsToCloud().catch(() => {});
+    }
+  }, [user?.uid]);
 
   useEffect(() => {
     if (user && viewMode === 'admin-login') {

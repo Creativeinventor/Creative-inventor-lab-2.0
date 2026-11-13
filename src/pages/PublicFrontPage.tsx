@@ -70,6 +70,8 @@ export const PublicFrontPage: React.FC<PublicFrontPageProps> = ({
         <section aria-label="Project Files">
           <FileList
             readOnly={true}
+            isAdminLoggedIn={isAdminLoggedIn}
+            onPublishPrompt={onOpenAdmin}
             onOpenFile={(file) => setPreviewFile(file)}
           />
         </section>

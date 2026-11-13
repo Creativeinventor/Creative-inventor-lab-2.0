@@ -12,6 +12,7 @@ import {
   Trash2,
   HardDrive,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { UploadedFileRecord } from '../types';
 import {
@@ -43,12 +44,16 @@ interface FileListProps {
   onOpenFile: (file: UploadedFileRecord) => void;
   refreshTrigger?: number;
   readOnly?: boolean;
+  isAdminLoggedIn?: boolean;
+  onPublishPrompt?: () => void;
 }
 
 export const FileList: React.FC<FileListProps> = ({
   onOpenFile,
   refreshTrigger,
   readOnly = false,
+  isAdminLoggedIn = false,
+  onPublishPrompt,
 }) => {
   const [firebaseFiles, setFirebaseFiles] = useState<UploadedFileRecord[]>([]);
   const [cloudProjectLinks, setCloudProjectLinks] = useState<UploadedFileRecord[]>([]);
@@ -173,6 +178,12 @@ export const FileList: React.FC<FileListProps> = ({
     }
     return Array.from(emails);
   }, [files]);
+
+  const unpublishedLocalCount = useMemo(() => {
+    if (driveLinks.length === 0) return 0;
+    const cloudIds = new Set(cloudProjectLinks.map((c) => c.id));
+    return driveLinks.filter((d) => !cloudIds.has(d.id)).length;
+  }, [driveLinks, cloudProjectLinks]);
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
@@ -392,6 +403,32 @@ export const FileList: React.FC<FileListProps> = ({
           </div>
         </div>
       </div>
+      )}
+
+      {/* Local-Only Warning (shown ONLY on the phone that has un-synced localStorage items) */}
+      {!loading && unpublishedLocalCount > 0 && readOnly && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-100 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              <strong>{unpublishedLocalCount}</strong> linked{' '}
+              {unpublishedLocalCount === 1 ? 'file is' : 'files are'} currently saved on this
+              browser only and <strong>not visible on other phones yet</strong>.{' '}
+              {isAdminLoggedIn
+                ? 'Open Admin to sync and verify cloud database rules.'
+                : 'Tap Admin (top-right) and sign in with Google to publish them to all phones.'}
+            </span>
+          </div>
+          {onPublishPrompt && (
+            <button
+              type="button"
+              onClick={onPublishPrompt}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer transition self-start sm:self-auto"
+            >
+              {isAdminLoggedIn ? 'Open Admin to Sync' : 'Admin Sign-In & Publish'}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Sync Result Toast */}
