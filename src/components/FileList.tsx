@@ -37,13 +37,11 @@ import {
 
 interface FileListProps {
   onOpenFile: (file: UploadedFileRecord) => void;
-  onOpenDriveConnect?: () => void;
   refreshTrigger?: number;
 }
 
 export const FileList: React.FC<FileListProps> = ({
   onOpenFile,
-  onOpenDriveConnect,
   refreshTrigger,
 }) => {
   const [firebaseFiles, setFirebaseFiles] = useState<UploadedFileRecord[]>([]);
@@ -340,8 +338,8 @@ export const FileList: React.FC<FileListProps> = ({
         </div>
       )}
 
-      {/* Multi-Drive Account Filter Tabs (shown when 1+ Google Drive accounts have linked items) */}
-      {driveAccountsInLinks.length > 0 && (
+      {/* Multi-Drive Account Filter Tabs (only shown when multiple Google Drives are linked) */}
+      {driveAccountsInLinks.length > 1 && (
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider shrink-0">
             Drive Account:
@@ -446,19 +444,9 @@ export const FileList: React.FC<FileListProps> = ({
             <FolderOpen className="w-10 h-10" />
           </div>
           <h3 className="text-lg font-bold text-white mb-1">No files or Drive links yet</h3>
-          <p className="text-sm text-slate-400 max-w-md mb-6 leading-relaxed">
-            Connect one or more Google Drives from the top corner to browse and pin files or folders permanently with live thumbnails.
+          <p className="text-sm text-slate-400 max-w-md leading-relaxed">
+            Use <strong>Connect it to your Google Drive</strong> in the top corner to select files or folders from your Google Drive accounts and display them here with thumbnails.
           </p>
-          {onOpenDriveConnect && (
-            <button
-              type="button"
-              onClick={onOpenDriveConnect}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center gap-2 cursor-pointer"
-            >
-              <HardDrive className="w-4 h-4" />
-              <span>Connect it to your Google Drive</span>
-            </button>
-          )}
         </div>
       )}
 
