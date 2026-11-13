@@ -7,6 +7,40 @@ export interface UploadedFileRecord {
   downloadURL: string;
   uploadedAt: any;
   uploadedBy: string;
+  // Google Drive integration fields
+  source?: 'firebase' | 'google-drive';
+  isFolder?: boolean;
+  driveFileId?: string;
+  driveAccountEmail?: string;
+  driveAccountName?: string;
+  driveAccountPhoto?: string;
+  thumbnailLink?: string;
+  iconLink?: string;
+  webViewLink?: string;
+  webContentLink?: string;
+}
+
+export interface DriveAccountInfo {
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  connected: boolean;
+  connectedAt?: number;
+}
+
+export interface DriveBrowseItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  isFolder: boolean;
+  size: number;
+  modifiedTime: string;
+  thumbnailLink?: string;
+  iconLink?: string;
+  webViewLink?: string;
+  webContentLink?: string;
+  parents?: string[];
+  trashed?: boolean;
 }
 
 export interface FirebaseConfig {
@@ -40,6 +74,7 @@ export interface AdminUserProfile {
 }
 
 export type FileCategory =
+  | 'folder'
   | 'image'
   | 'video'
   | 'audio'

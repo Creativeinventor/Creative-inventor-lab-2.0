@@ -19,6 +19,10 @@ export function getFileCategory(filename: string, mimeType: string = ''): FileCa
   const ext = getFileExtension(filename).toLowerCase();
   const mime = mimeType.toLowerCase();
 
+  if (mime === 'application/vnd.google-apps.folder') {
+    return 'folder';
+  }
+
   // Images
   if (
     ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff'].includes(ext) ||
@@ -50,7 +54,8 @@ export function getFileCategory(filename: string, mimeType: string = ''): FileCa
 
   // Code & Data
   if (
-    ['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'json', 'py', 'c', 'cpp', 'h', 'hpp', 'java', 'cs', 'go', 'rs', 'php', 'rb', 'sh', 'bash', 'sql', 'xml', 'yaml', 'yml', 'env', 'md'].includes(ext)
+    ['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'json', 'py', 'c', 'cpp', 'h', 'hpp', 'java', 'cs', 'go', 'rs', 'php', 'rb', 'sh', 'bash', 'sql', 'xml', 'yaml', 'yml', 'env', 'md'].includes(ext) ||
+    mime === 'application/vnd.google-apps.script'
   ) {
     return 'code';
   }
@@ -60,13 +65,14 @@ export function getFileCategory(filename: string, mimeType: string = ''): FileCa
     return 'archive';
   }
 
-  // Documents
+  // Documents (including Google Docs / Sheets / Slides / Forms)
   if (
     ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'txt', 'rtf', 'csv'].includes(ext) ||
     mime.includes('pdf') ||
     mime.includes('document') ||
     mime.includes('sheet') ||
-    mime.includes('presentation')
+    mime.includes('presentation') ||
+    mime.includes('vnd.google-apps.')
   ) {
     return 'document';
   }

@@ -104,6 +104,12 @@ export async function loginWithGoogle(): Promise<AuthUser> {
 
 export async function logoutAdmin(): Promise<void> {
   clearLegacyStorage();
+  try {
+    const { clearAllDriveTokens } = await import('./googleDrive');
+    clearAllDriveTokens();
+  } catch {
+    // Ignore cleanup errors
+  }
   const { auth } = getServices();
   if (auth) {
     try {
