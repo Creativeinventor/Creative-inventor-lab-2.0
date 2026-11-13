@@ -11,23 +11,27 @@ let dbInstance: Firestore | null = null;
 let storageInstance: FirebaseStorage | null = null;
 
 export function initializeFirebaseServices(): {
-  app: FirebaseApp;
-  auth: Auth;
-  db: Firestore;
-  storage: FirebaseStorage;
+  app: FirebaseApp | null;
+  auth: Auth | null;
+  db: Firestore | null;
+  storage: FirebaseStorage | null;
 } {
-  // Use environment overrides if configured, otherwise use direct firebaseConfig
-  const config = getActiveFirebaseConfig() || firebaseConfig;
+  try {
+    // Use environment overrides if configured, otherwise use direct firebaseConfig
+    const config = getActiveFirebaseConfig() || firebaseConfig;
 
-  if (getApps().length === 0) {
-    appInstance = initializeApp(config);
-  } else {
-    appInstance = getApp();
+    if (getApps().length === 0) {
+      appInstance = initializeApp(config);
+    } else {
+      appInstance = getApp();
+    }
+
+    if (!authInstance && appInstance) authInstance = getAuth(appInstance);
+    if (!dbInstance && appInstance) dbInstance = getFirestore(appInstance);
+    if (!storageInstance && appInstance) storageInstance = getStorage(appInstance);
+  } catch (error) {
+    console.error('Firebase initialization error:', error);
   }
-
-  if (!authInstance) authInstance = getAuth(appInstance);
-  if (!dbInstance) dbInstance = getFirestore(appInstance);
-  if (!storageInstance) storageInstance = getStorage(appInstance);
 
   return {
     app: appInstance,
@@ -37,7 +41,7 @@ export function initializeFirebaseServices(): {
   };
 }
 
-// Initial setup
+// Safe initial setup that never crashes module load
 const initial = initializeFirebaseServices();
 export const app = initial.app;
 export const auth = initial.auth;

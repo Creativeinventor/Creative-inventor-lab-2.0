@@ -2,7 +2,51 @@ import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, AlertTriangle } from 'lucide-react';
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  message: string;
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      message: error?.message || 'An unexpected application error occurred.',
+    };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen w-full bg-[#070a13] flex items-center justify-center p-6 text-slate-100">
+          <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-2xl p-6 text-center space-y-4">
+            <AlertTriangle className="w-10 h-10 text-red-400 mx-auto" />
+            <h1 className="text-lg font-bold text-white">CREATIVE INVENTOR LAB</h1>
+            <p className="text-xs text-red-300 leading-relaxed">{this.state.message}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs cursor-pointer"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
@@ -32,8 +76,10 @@ const MainApp: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <MainApp />
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <MainApp />
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }

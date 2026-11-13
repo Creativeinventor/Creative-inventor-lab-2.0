@@ -27,17 +27,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const unsubscribe = subscribeToAuth(
-      (currentUser) => {
-        setUser(currentUser);
+    let resolved = false;
+    const safetyTimer = setTimeout(() => {
+      if (!resolved) {
         setLoading(false);
-      },
-      (unauthorizedMsg) => {
-        setAuthError(unauthorizedMsg);
       }
-    );
+    }, 2000);
 
-    return () => unsubscribe();
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeToAuth(
+        (currentUser) => {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          setUser(currentUser);
+          setLoading(false);
+        },
+        (unauthorizedMsg) => {
+          setAuthError(unauthorizedMsg);
+        }
+      );
+    } catch (err) {
+      console.error('Auth subscription error:', err);
+      resolved = true;
+      clearTimeout(safetyTimer);
+      setLoading(false);
+    }
+
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, [isConfigured]);
 
   const handleGoogleLogin = async (): Promise<AuthUser> => {
