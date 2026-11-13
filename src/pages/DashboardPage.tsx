@@ -14,6 +14,7 @@ import {
   syncLinkedItemsWithDrive,
 } from '../firebase/googleDrive';
 import { getActiveFirebaseConfig } from '../firebase/configManager';
+import { checkCloudProjectLinksHealth } from '../firebase/firestore';
 import {
   Sparkles,
   AlertCircle,
@@ -66,15 +67,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
     totalCount: 0,
     syncedCount: 0,
   });
+  const [cloudHealth, setCloudHealth] = useState<{
+    checked: boolean;
+    ok: boolean;
+    count: number;
+    errorCode?: string;
+    errorMessage?: string;
+  }>({ checked: false, ok: true, count: 0 });
   const [copiedRules, setCopiedRules] = useState(false);
 
   const activeProjectId = getActiveFirebaseConfig().projectId;
 
+  const runCloudSyncAndHealth = async () => {
+    const [health, syncRes] = await Promise.all([
+      checkCloudProjectLinksHealth(),
+      syncAllLinkedItemsToCloud(),
+    ]);
+    setCloudHealth({
+      checked: true,
+      ok: health.ok,
+      count: health.count,
+      errorCode: health.errorCode,
+      errorMessage: health.errorMessage,
+    });
+    return { health, syncRes };
+  };
+
   useEffect(() => {
     const unsub = subscribeToCloudSyncState(setCloudSync);
-    syncAllLinkedItemsToCloud().catch(() => {});
+    runCloudSyncAndHealth().catch(() => {});
     return unsub;
-  }, []);
+  }, [refreshTrigger]);
 
   const handleCopyRules = async () => {
     try {
@@ -116,6 +139,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
     }
   };
 
+  const hasCloudPermissionError =
+    cloudSync.status === 'error' || (cloudHealth.checked && !cloudHealth.ok);
+  const cloudErrorReason =
+    cloudSync.errorCode ||
+    cloudSync.errorMessage ||
+    cloudHealth.errorCode ||
+    cloudHealth.errorMessage ||
+    'permission-denied';
+
   return (
     <div className="min-h-screen bg-[#070a13] text-slate-100 flex flex-col">
       {/* Top Navbar with single "Connect it to your Google Drive" button in top corner */}
@@ -134,7 +166,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
         )}
 
         {/* Cross-Device Publishing Status Banner (Admin Only) */}
-        {cloudSync.status === 'error' && (
+        {hasCloudPermissionError && (
           <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-100 space-y-3">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -143,13 +175,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
                   Action Required to Show Selected Files on All Phones &amp; Browsers
                 </p>
                 <p className="text-amber-200/90 leading-relaxed">
-                  Your selected files are saved in this browser, but syncing them to Firestore (
+                  Cloud database sync on Firebase project{' '}
                   <code className="px-1.5 py-0.5 rounded bg-slate-950/60 font-mono text-amber-300">
                     {activeProjectId}
-                  </code>
-                  ) was blocked ({cloudSync.errorCode || cloudSync.errorMessage}). Until Firestore
-                  Rules allow <code className="font-mono">projectLinks</code> public read + admin
-                  write, other phones will show blank below <em>Project files</em>.
+                  </code>{' '}
+                  is blocked ({cloudErrorReason}). Until Firestore Rules allow{' '}
+                  <code className="font-mono">projectLinks</code> public read + admin write,
+                  other mobile phones will show blank below <em>Project files</em>.
                 </p>
               </div>
             </div>
@@ -182,7 +214,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
               </a>
               <button
                 type="button"
-                onClick={() => syncAllLinkedItemsToCloud()}
+                onClick={() => runCloudSyncAndHealth()}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 text-xs font-semibold cursor-pointer transition"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -192,19 +224,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage })
           </div>
         )}
 
-        {cloudSync.status === 'synced' && cloudSync.totalCount > 0 && (
+        {!hasCloudPermissionError && cloudHealth.checked && (
           <div className="px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-200 text-xs flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>
-                Published <strong>{cloudSync.syncedCount}</strong> selected item
-                {cloudSync.syncedCount === 1 ? '' : 's'} to <strong>Project files</strong> (visible
-                across all phones &amp; browsers).
+                Cloud Database Active ({activeProjectId}):{' '}
+                <strong>{Math.max(cloudHealth.count, cloudSync.syncedCount)}</strong> item
+                {Math.max(cloudHealth.count, cloudSync.syncedCount) === 1 ? '' : 's'} published to{' '}
+                <strong>Project files</strong> (visible on all phones &amp; browsers).
               </span>
             </div>
             <button
               type="button"
-              onClick={() => syncAllLinkedItemsToCloud()}
+              onClick={() => runCloudSyncAndHealth()}
               className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-white cursor-pointer"
             >
               <RefreshCw className="w-3 h-3" />

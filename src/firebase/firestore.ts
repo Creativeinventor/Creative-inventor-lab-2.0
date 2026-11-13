@@ -293,7 +293,7 @@ export async function publishProjectLink(record: UploadedFileRecord): Promise<Cl
         webContentLink: clampStr(record.webContentLink || '', 2048),
       }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Cloud sync timed out.')), 10000)
+        setTimeout(() => reject(new Error('Cloud sync timed out.')), 20000)
       ),
     ]);
     return { ok: true };
@@ -326,6 +326,34 @@ export async function unpublishProjectLink(recordId: string): Promise<CloudWrite
       ok: false,
       errorCode: err?.code || 'delete-failed',
       errorMessage: err?.message || 'Could not remove link from Firestore.',
+    };
+  }
+}
+
+export async function checkCloudProjectLinksHealth(): Promise<{
+  ok: boolean;
+  count: number;
+  errorCode?: string;
+  errorMessage?: string;
+}> {
+  const { db } = getServices();
+  if (!db) {
+    return {
+      ok: false,
+      count: 0,
+      errorCode: 'firestore-not-initialized',
+      errorMessage: 'Firestore is not initialized.',
+    };
+  }
+  try {
+    const snapshot = await getDocs(collection(db, 'projectLinks'));
+    return { ok: true, count: snapshot.size };
+  } catch (err: any) {
+    return {
+      ok: false,
+      count: 0,
+      errorCode: err?.code || 'read-failed',
+      errorMessage: err?.message || 'Could not read projectLinks from Firestore.',
     };
   }
 }
