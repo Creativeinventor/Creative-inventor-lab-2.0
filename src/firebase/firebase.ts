@@ -25,7 +25,8 @@ export function initializeFirebaseServices(): {
   try {
     const config = getActiveFirebaseConfig() || firebaseConfig;
 
-    if (getApps().length === 0) {
+    const defaultApp = getApps().find((a) => a.name === '[DEFAULT]');
+    if (!defaultApp) {
       appInstance = initializeApp(config);
     } else {
       appInstance = getApp();

@@ -274,7 +274,9 @@ export async function publishProjectLink(record: UploadedFileRecord): Promise<Cl
         id: clampStr(record.id, 255),
         fileName: clampStr(record.fileName || 'Untitled', 300),
         fileType: clampStr(record.fileType || '', 150),
-        fileSize: Math.max(0, Number(record.fileSize || 0)),
+        fileSize: Number.isFinite(Number(record.fileSize))
+          ? Math.max(0, Number(record.fileSize))
+          : 0,
         storagePath: clampStr(record.storagePath || '', 500),
         downloadURL: clampStr(record.downloadURL || '', 2048),
         uploadedAt: uploadedAtIso,
@@ -353,10 +355,11 @@ export function subscribeToPublicProjectLinks(
 
   let isDisposed = false;
   const itemsBySource = new Map<number, UploadedFileRecord[]>();
+  const failedSources = new Set<number>();
   const unsubs: Array<() => void> = [];
 
   // Validate connection cleanly on boot
-  getDocFromServer(doc(targets[0], 'projectLinks', '_connection_check')).catch(() => {});
+  getDocFromServer(doc(targets[targets.length - 1], 'projectLinks', '_connection_check')).catch(() => {});
 
   const emitMerged = () => {
     if (isDisposed) return;
@@ -369,6 +372,14 @@ export function subscribeToPublicProjectLinks(
     onUpdate(Array.from(merged.values()));
   };
 
+  const handleSourceError = (idx: number, err: any) => {
+    if (isDisposed) return;
+    failedSources.add(idx);
+    if (failedSources.size === targets.length && onError) {
+      onError(err);
+    }
+  };
+
   targets.forEach((targetDb, idx) => {
     let receivedLive = false;
 
@@ -379,8 +390,7 @@ export function subscribeToPublicProjectLinks(
         emitMerged();
       })
       .catch((err) => {
-        if (isDisposed) return;
-        if (idx === 0 && onError) onError(err);
+        handleSourceError(idx, err);
       });
 
     try {
@@ -395,12 +405,12 @@ export function subscribeToPublicProjectLinks(
         (error) => {
           if (isDisposed) return;
           console.warn('projectLinks subscription notice:', error?.code || error?.message);
-          if (idx === 0 && onError) onError(error);
+          handleSourceError(idx, error);
         }
       );
       unsubs.push(unsub);
     } catch (err) {
-      if (idx === 0 && onError) onError(err);
+      handleSourceError(idx, err);
     }
   });
 
