@@ -3,11 +3,13 @@ import {
   getAuth,
   initializeAuth,
   inMemoryPersistence,
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
   signInWithPopup,
   Auth,
 } from 'firebase/auth';
 import appletConfig from '../../firebase-applet-config.json';
+import { firebaseConfig } from './firebaseConfig';
 import {
   DriveAccountInfo,
   DriveBrowseItem,
@@ -17,6 +19,7 @@ import {
 export const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'] as const;
 
 const DRIVE_CONNECTOR_APP_NAME = 'google-drive-connector';
+const DRIVE_PRIMARY_APP_NAME = 'google-drive-connector-primary';
 const LINKED_ITEMS_STORAGE_KEY = 'creative_inventor_drive_links_v1';
 const KNOWN_ACCOUNTS_STORAGE_KEY = 'creative_inventor_drive_accounts_v1';
 
@@ -35,6 +38,8 @@ const listeners = new Set<() => void>();
 
 let driveAppInstance: FirebaseApp | null = null;
 let driveAuthInstance: Auth | null = null;
+let drivePrimaryAppInstance: FirebaseApp | null = null;
+let drivePrimaryAuthInstance: Auth | null = null;
 
 function notifyListeners() {
   listeners.forEach((cb) => {
@@ -53,7 +58,30 @@ export function subscribeToDriveState(listener: () => void): () => void {
   };
 }
 
-function getDriveAuth(): Auth {
+function createIsolatedAuth(app: FirebaseApp): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: inMemoryPersistence,
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+function getDriveAuth(usePrimaryProject: boolean = false): Auth {
+  if (usePrimaryProject) {
+    if (drivePrimaryAuthInstance) return drivePrimaryAuthInstance;
+    const existing = getApps().find((a) => a.name === DRIVE_PRIMARY_APP_NAME);
+    if (existing) {
+      drivePrimaryAppInstance = existing;
+    } else {
+      drivePrimaryAppInstance = initializeApp(firebaseConfig, DRIVE_PRIMARY_APP_NAME);
+    }
+    drivePrimaryAuthInstance = createIsolatedAuth(drivePrimaryAppInstance);
+    return drivePrimaryAuthInstance;
+  }
+
   if (driveAuthInstance) return driveAuthInstance;
 
   const existing = getApps().find((a) => a.name === DRIVE_CONNECTOR_APP_NAME);
@@ -73,14 +101,7 @@ function getDriveAuth(): Auth {
     );
   }
 
-  try {
-    driveAuthInstance = initializeAuth(driveAppInstance, {
-      persistence: inMemoryPersistence,
-    });
-  } catch {
-    driveAuthInstance = getAuth(driveAppInstance);
-  }
-
+  driveAuthInstance = createIsolatedAuth(driveAppInstance);
   return driveAuthInstance;
 }
 
@@ -184,9 +205,16 @@ export function removeKnownDriveAccount(email: string) {
  * never logs out or overwrites the primary 20sgamingrohit@gmail.com admin session.
  */
 export async function connectGoogleDriveAccount(
-  loginHintEmail?: string
+  loginHintOrOptions?: string | { loginHintEmail?: string; usePrimaryProject?: boolean }
 ): Promise<DriveAccountInfo> {
-  const driveAuth = getDriveAuth();
+  const loginHintEmail =
+    typeof loginHintOrOptions === 'string'
+      ? loginHintOrOptions
+      : loginHintOrOptions?.loginHintEmail;
+  const usePrimaryProject =
+    typeof loginHintOrOptions === 'object' && Boolean(loginHintOrOptions?.usePrimaryProject);
+
+  const driveAuth = getDriveAuth(usePrimaryProject);
   const provider = new GoogleAuthProvider();
   provider.addScope(SCOPES[0]);
 
@@ -199,7 +227,7 @@ export async function connectGoogleDriveAccount(
   provider.setCustomParameters(customParams);
 
   try {
-    const result = await signInWithPopup(driveAuth, provider);
+    const result = await signInWithPopup(driveAuth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = credential?.accessToken;
 
@@ -274,8 +302,9 @@ export async function connectGoogleDriveAccount(
     }
     if (code === 'auth/unauthorized-domain') {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+      const targetProject = usePrimaryProject ? firebaseConfig.projectId : appletConfig.projectId;
       throw new Error(
-        `Domain "${host}" is not authorized for the Google Drive connector app (${appletConfig.projectId}). Open this app from AI Studio or add "${host}" in Firebase Console -> ${appletConfig.projectId} -> Authentication -> Authorized domains.`
+        `UNAUTHORIZED_DRIVE_DOMAIN:${host}:${targetProject}`
       );
     }
     throw new Error(error?.message || 'Failed to connect Google Drive account.');
@@ -346,7 +375,18 @@ export async function listDriveItems(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Google Drive API error (${res.status}): ${errText || res.statusText}`);
+    let apiMsg: string | null = null;
+    try {
+      const parsed = JSON.parse(errText);
+      if (parsed?.error?.message) {
+        apiMsg = parsed.error.message;
+      }
+    } catch {
+      // Ignore JSON parse failure
+    }
+    throw new Error(
+      apiMsg || `Google Drive API error (${res.status}): ${errText || res.statusText}`
+    );
   }
 
   const data = await res.json();

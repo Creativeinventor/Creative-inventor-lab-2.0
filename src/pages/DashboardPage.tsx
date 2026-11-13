@@ -76,11 +76,11 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
-  const handleConnectNewDriveDirectly = async () => {
+  const handleConnectNewDriveDirectly = async (usePrimaryProject: boolean = false) => {
     setTopDriveError(null);
     setConnectingTopDrive(true);
     try {
-      const account = await connectGoogleDriveAccount();
+      const account = await connectGoogleDriveAccount({ usePrimaryProject });
       setDriveModalAccount(account.email);
       setDriveModalOpen(true);
       syncLinkedItemsWithDrive(account.email).catch(() => {});
@@ -166,7 +166,7 @@ export const DashboardPage: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-3 shrink-0">
                   <button
                     type="button"
-                    onClick={handleConnectNewDriveDirectly}
+                    onClick={() => handleConnectNewDriveDirectly(false)}
                     disabled={connectingTopDrive}
                     className="px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-cyan-500/20 flex items-center gap-2 cursor-pointer transition disabled:opacity-60"
                   >
@@ -199,9 +199,44 @@ export const DashboardPage: React.FC = () => {
               </div>
 
               {topDriveError && (
-                <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{topDriveError}</span>
+                <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs space-y-2">
+                  {topDriveError.startsWith('UNAUTHORIZED_DRIVE_DOMAIN:') ? (
+                    (() => {
+                      const [, host, projectId] = topDriveError.split(':');
+                      return (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                            <span>
+                              Domain <code className="px-1 bg-slate-950 rounded text-cyan-300">{host}</code> is not yet authorized on <code className="px-1 bg-slate-950 rounded text-amber-300">{projectId}</code>.
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 pl-6">
+                            <button
+                              type="button"
+                              onClick={() => handleConnectNewDriveDirectly(true)}
+                              disabled={connectingTopDrive}
+                              className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+                            >
+                              Try via Creative Inventor Firebase
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard?.writeText(host)}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold cursor-pointer"
+                            >
+                              Copy Domain ({host})
+                            </button>
+                          </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <span>{topDriveError}</span>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   Users,
   FolderOpen,
+  Copy,
 } from 'lucide-react';
 import {
   connectGoogleDriveAccount,
@@ -137,12 +138,15 @@ export const GoogleDriveConnectModal: React.FC<GoogleDriveConnectModalProps> = (
     loadFolder(currentAccount.email, currentFolderId, activeSearch);
   }, [isOpen, currentAccount?.email, currentAccount?.connected, currentFolderId, activeSearch, loadFolder]);
 
-  const handleConnectAccount = async (loginHint?: string) => {
+  const handleConnectAccount = async (loginHint?: string, usePrimaryProject: boolean = false) => {
     setConnectError(null);
     setBrowseError(null);
     setIsConnecting(true);
     try {
-      const account = await connectGoogleDriveAccount(loginHint);
+      const account = await connectGoogleDriveAccount({
+        loginHintEmail: loginHint,
+        usePrimaryProject,
+      });
       refreshAccountsAndLinked();
       setSelectedEmail(account.email);
       setBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
@@ -321,9 +325,45 @@ export const GoogleDriveConnectModal: React.FC<GoogleDriveConnectModalProps> = (
 
         {/* Connect Error Banner */}
         {connectError && (
-          <div className="mx-4 sm:mx-6 mt-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{connectError}</span>
+          <div className="mx-4 sm:mx-6 mt-3 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs space-y-2.5">
+            {connectError.startsWith('UNAUTHORIZED_DRIVE_DOMAIN:') ? (
+              (() => {
+                const [, host, projectId] = connectError.split(':');
+                return (
+                  <>
+                    <div className="flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <div className="leading-relaxed">
+                        Domain <code className="px-1.5 py-0.5 bg-slate-950 rounded text-cyan-300">{host}</code> is not yet authorized on Firebase project <code className="px-1.5 py-0.5 bg-slate-950 rounded text-amber-300">{projectId}</code>.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pl-6">
+                      <button
+                        type="button"
+                        onClick={() => handleConnectAccount(undefined, true)}
+                        disabled={isConnecting}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+                      >
+                        Try via Creative Inventor Firebase
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(host)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Domain ({host})</span>
+                      </button>
+                    </div>
+                  </>
+                );
+              })()
+            ) : (
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{connectError}</span>
+              </div>
+            )}
           </div>
         )}
 
