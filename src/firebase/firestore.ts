@@ -52,15 +52,28 @@ export async function saveUploadedFileMetadata(fileData: {
 
   const collectionPath = 'uploadedFiles';
   try {
-    const docRef = await addDoc(collection(db, collectionPath), {
-      fileName: fileData.fileName,
-      fileType: fileData.fileType || 'application/octet-stream',
-      fileSize: fileData.fileSize,
-      storagePath: fileData.storagePath,
-      downloadURL: fileData.downloadURL,
-      uploadedBy: fileData.uploadedBy,
-      uploadedAt: serverTimestamp(),
-    });
+    const docRef = await Promise.race([
+      addDoc(collection(db, collectionPath), {
+        fileName: fileData.fileName,
+        fileType: fileData.fileType || 'application/octet-stream',
+        fileSize: fileData.fileSize,
+        storagePath: fileData.storagePath,
+        downloadURL: fileData.downloadURL,
+        uploadedBy: fileData.uploadedBy,
+        uploadedAt: serverTimestamp(),
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                'File uploaded to Storage, but saving metadata timed out. Ensure Cloud Firestore Database is created and enabled in Firebase Console (Build -> Firestore Database).'
+              )
+            ),
+          12000
+        )
+      ),
+    ]);
     return docRef.id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, collectionPath);

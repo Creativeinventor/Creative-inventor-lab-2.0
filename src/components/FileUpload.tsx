@@ -41,6 +41,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const { user, isConfigured } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cancelUploadRef = useRef<(() => void) | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -141,6 +142,18 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   };
 
+  const handleCancelUpload = () => {
+    if (cancelUploadRef.current) {
+      cancelUploadRef.current();
+      cancelUploadRef.current = null;
+    }
+    setUploadState((prev) => ({
+      ...prev,
+      status: 'error',
+      errorMessage: 'Upload cancelled by administrator.',
+    }));
+  };
+
   const handleStartUpload = async () => {
     if (!selectedFile) return;
 
@@ -163,7 +176,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }));
 
     try {
-      const { task } = uploadFileToStorage(
+      const { task, cancel } = uploadFileToStorage(
         selectedFile,
         (progress, transferred, total) => {
           setUploadState((prev) => ({
@@ -174,8 +187,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           }));
         }
       );
+      cancelUploadRef.current = cancel;
 
       const storageResult = await task;
+      cancelUploadRef.current = null;
 
       // Save metadata in Firestore
       const recordId = await saveUploadedFileMetadata({
@@ -209,6 +224,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         onUploadSuccess(newRecord);
       }
     } catch (err: any) {
+      cancelUploadRef.current = null;
       console.error('Upload failed:', err);
       // NOTE: Do not clear the selected file if an upload fails! Allow retrying!
       setUploadState((prev) => ({
@@ -362,11 +378,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
                   <span>
                     {formatFileSize(uploadState.bytesTransferred)} / {formatFileSize(uploadState.totalBytes)}
                   </span>
-                  <span>Resumable Cloud Upload</span>
+                  <div className="flex items-center gap-3">
+                    <span>Resumable Cloud Upload</span>
+                    <button
+                      type="button"
+                      onClick={handleCancelUpload}
+                      className="px-2.5 py-1 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-[11px] font-semibold transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
