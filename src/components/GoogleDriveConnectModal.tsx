@@ -15,6 +15,7 @@ import {
   Users,
   FolderOpen,
   Copy,
+  ExternalLink,
 } from 'lucide-react';
 import {
   connectGoogleDriveAccount,
@@ -517,21 +518,57 @@ export const GoogleDriveConnectModal: React.FC<GoogleDriveConnectModalProps> = (
 
               {/* Files & Folders List */}
               <div className="flex-1 overflow-y-auto p-3 sm:p-5 bg-slate-950/30">
-                {browseError && (
-                  <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                      <span>{browseError}</span>
+                {browseError && (() => {
+                  const consoleUrlMatch = browseError.match(
+                    /https:\/\/console\.(developers|cloud)\.google\.com\/[^\s]+/
+                  );
+                  const enableApiUrl = consoleUrlMatch ? consoleUrlMatch[0] : null;
+                  return (
+                    <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1 min-w-0 break-words">
+                          {enableApiUrl ? (
+                            <>
+                              <p className="font-bold text-white">
+                                Google Drive API needs to be enabled once for this project.
+                              </p>
+                              <p className="text-red-200/90 leading-relaxed">
+                                Tap <strong>Enable Google Drive API</strong> below, click <strong>Enable</strong> on the Google Cloud page, wait a few seconds, then tap <strong>Retry</strong>.
+                              </p>
+                            </>
+                          ) : (
+                            <span>{browseError}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        {enableApiUrl && (
+                          <a
+                            href={enableApiUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Enable Google Drive API</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            enableApiUrl
+                              ? loadFolder(currentAccount.email, currentFolderId, activeSearch)
+                              : handleConnectAccount(currentAccount.email)
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          {enableApiUrl ? 'Retry' : 'Reconnect'}
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleConnectAccount(currentAccount.email)}
-                      className="px-3 py-1.5 rounded-lg bg-red-500 text-slate-950 font-bold text-xs cursor-pointer shrink-0"
-                    >
-                      Reconnect
-                    </button>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {loadingItems && browseItems.length === 0 && (
                   <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400">

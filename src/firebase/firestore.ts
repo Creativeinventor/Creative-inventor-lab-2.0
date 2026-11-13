@@ -7,7 +7,6 @@ import {
   query,
   orderBy,
   serverTimestamp,
-  getDocs,
 } from 'firebase/firestore';
 import { getServices } from './firebase';
 import { UploadedFileRecord } from '../types';
@@ -21,7 +20,12 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null,
+  shouldThrow: boolean = true
+) {
   const { auth } = getServices();
   const errInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -33,8 +37,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth?.currentUser?.emailVerified,
     },
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(error instanceof Error ? error.message : String(error));
+  if (shouldThrow) {
+    console.warn('Firestore Notice: ', JSON.stringify(errInfo));
+    throw new Error(error instanceof Error ? error.message : String(error));
+  } else {
+    console.warn('Firestore Subscription Notice: ', JSON.stringify(errInfo));
+  }
 }
 
 export async function saveUploadedFileMetadata(fileData: {
@@ -76,7 +84,7 @@ export async function saveUploadedFileMetadata(fileData: {
     ]);
     return docRef.id;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, collectionPath);
+    handleFirestoreError(error, OperationType.CREATE, collectionPath, true);
     return '';
   }
 }
@@ -92,14 +100,16 @@ export function subscribeToUploadedFiles(
   }
 
   const collectionPath = 'uploadedFiles';
+  let activeUnsub: (() => void) | null = null;
+  let isDisposed = false;
 
   try {
-    // Try ordered query first
     const q = query(collection(db, collectionPath), orderBy('uploadedAt', 'desc'));
 
-    const unsubscribe = onSnapshot(
+    activeUnsub = onSnapshot(
       q,
       (snapshot) => {
+        if (isDisposed) return;
         const files: UploadedFileRecord[] = snapshot.docs.map((d) => {
           const data = d.data();
           return {
@@ -116,12 +126,21 @@ export function subscribeToUploadedFiles(
         onUpdate(files);
       },
       (error) => {
-        console.warn('Ordered query on uploadedFiles failed, falling back to unordered query:', error);
-        // Fallback without orderBy in case index or permissions error on order
+        if (isDisposed) return;
+        console.warn('Ordered query on uploadedFiles skipped:', error?.code || error?.message);
+
+        // If permission-denied or not-found, do not crash or throw unhandled errors
+        if (error?.code === 'permission-denied' || error?.code === 'not-found') {
+          onUpdate([]);
+          onError(error);
+          return;
+        }
+
         try {
-          const fallbackUnsub = onSnapshot(
+          activeUnsub = onSnapshot(
             collection(db, collectionPath),
             (snapshot) => {
+              if (isDisposed) return;
               const files: UploadedFileRecord[] = snapshot.docs.map((d) => {
                 const data = d.data();
                 return {
@@ -135,7 +154,6 @@ export function subscribeToUploadedFiles(
                   uploadedBy: data.uploadedBy || 'admin',
                 };
               });
-              // Sort descending in memory
               files.sort((a, b) => {
                 const timeA = a.uploadedAt?.seconds || 0;
                 const timeB = b.uploadedAt?.seconds || 0;
@@ -144,19 +162,27 @@ export function subscribeToUploadedFiles(
               onUpdate(files);
             },
             (fallbackErr) => {
-              handleFirestoreError(fallbackErr, OperationType.LIST, collectionPath);
+              if (isDisposed) return;
+              handleFirestoreError(fallbackErr, OperationType.LIST, collectionPath, false);
+              onUpdate([]);
               onError(fallbackErr);
             }
           );
-          return fallbackUnsub;
         } catch (e) {
+          onUpdate([]);
           onError(e);
         }
       }
     );
 
-    return unsubscribe;
+    return () => {
+      isDisposed = true;
+      if (activeUnsub) {
+        activeUnsub();
+      }
+    };
   } catch (error) {
+    onUpdate([]);
     onError(error);
     return () => {};
   }
@@ -172,6 +198,6 @@ export async function deleteUploadedFileMetadata(fileId: string): Promise<void> 
   try {
     await deleteDoc(doc(db, 'uploadedFiles', fileId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, docPath);
+    handleFirestoreError(error, OperationType.DELETE, docPath, true);
   }
 }

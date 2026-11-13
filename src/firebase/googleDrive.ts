@@ -211,8 +211,18 @@ export async function connectGoogleDriveAccount(
     typeof loginHintOrOptions === 'string'
       ? loginHintOrOptions
       : loginHintOrOptions?.loginHintEmail;
+
+  const isAiStudioOrLocalHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname.endsWith('.run.app') ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1');
+
   const usePrimaryProject =
-    typeof loginHintOrOptions === 'object' && Boolean(loginHintOrOptions?.usePrimaryProject);
+    typeof loginHintOrOptions === 'object' &&
+    loginHintOrOptions?.usePrimaryProject !== undefined
+      ? loginHintOrOptions.usePrimaryProject
+      : !isAiStudioOrLocalHost;
 
   const driveAuth = getDriveAuth(usePrimaryProject);
   const provider = new GoogleAuthProvider();
