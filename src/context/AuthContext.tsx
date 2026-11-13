@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { subscribeToAuth, loginAdmin, logoutAdmin } from '../firebase/auth';
+import { subscribeToAuth, loginWithGoogle, logoutAdmin } from '../firebase/auth';
 import { isFirebaseConfigured } from '../firebase/configManager';
 import { AuthUser } from '../types';
 
@@ -7,9 +7,10 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   isConfigured: boolean;
-  login: (username: string, pass: string) => Promise<AuthUser>;
+  authError: string | null;
+  clearAuthError: () => void;
+  loginWithGoogle: () => Promise<AuthUser>;
   logout: () => Promise<void>;
-  updateUsernameState: (newUsername: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const isConfigured = isFirebaseConfigured();
 
   useEffect(() => {
@@ -25,28 +27,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const unsubscribe = subscribeToAuth((currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
+    const unsubscribe = subscribeToAuth(
+      (currentUser) => {
+        setUser(currentUser);
+        setLoading(false);
+      },
+      (unauthorizedMsg) => {
+        setAuthError(unauthorizedMsg);
+      }
+    );
 
     return () => unsubscribe();
   }, [isConfigured]);
 
-  const handleLogin = async (username: string, pass: string): Promise<AuthUser> => {
-    const loggedInUser = await loginAdmin(username, pass);
+  const handleGoogleLogin = async (): Promise<AuthUser> => {
+    setAuthError(null);
+    const loggedInUser = await loginWithGoogle();
     setUser(loggedInUser);
     return loggedInUser;
   };
 
   const handleLogout = async (): Promise<void> => {
+    setAuthError(null);
     await logoutAdmin();
     setUser(null);
   };
 
-  const updateUsernameState = (newUsername: string) => {
-    setUser((prev) => (prev ? { ...prev, username: newUsername, displayName: newUsername } : null));
-  };
+  const clearAuthError = () => setAuthError(null);
 
   return (
     <AuthContext.Provider
@@ -54,9 +61,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         loading,
         isConfigured,
-        login: handleLogin,
+        authError,
+        clearAuthError,
+        loginWithGoogle: handleGoogleLogin,
         logout: handleLogout,
-        updateUsernameState,
       }}
     >
       {children}

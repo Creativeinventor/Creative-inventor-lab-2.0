@@ -2,25 +2,42 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Administrator credentials and profiles in Firebase database
-    match /adminUsers/{userId} {
-      allow read, write: if true;
-    }
-
-    // Legacy admin records
-    match /admins/{adminId} {
-      allow read, write: if true;
-    }
-
-    // Uploaded files metadata collection
-    match /uploadedFiles/{fileId} {
-      allow read, write: if true;
-    }
-
-    // Default deny catch-all
+    // Global Safety Net: Default deny
     match /{document=**} {
       allow read, write: if false;
     }
+
+    function isAuthorizedAdmin() {
+      return request.auth != null &&
+        request.auth.token.email == '20sgamingrohit@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUploadedFile(data) {
+      return data.keys().hasAll(['fileName', 'fileType', 'fileSize', 'storagePath', 'downloadURL', 'uploadedBy']) &&
+        data.keys().hasOnly(['fileName', 'fileType', 'fileSize', 'storagePath', 'downloadURL', 'uploadedBy', 'uploadedAt']) &&
+        data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 255 &&
+        data.fileType is string && data.fileType.size() <= 100 &&
+        data.fileSize is number && data.fileSize >= 0 &&
+        data.storagePath is string && data.storagePath.size() > 0 && data.storagePath.size() <= 500 &&
+        data.downloadURL is string && data.downloadURL.size() > 0 && data.downloadURL.size() <= 2048 &&
+        data.uploadedBy is string && data.uploadedBy == request.auth.uid;
+    }
+
+    // Uploaded files metadata collection: strictly restricted to 20sgamingrohit@gmail.com
+    match /uploadedFiles/{fileId} {
+      allow read, list: if isAuthorizedAdmin();
+      allow create: if isAuthorizedAdmin() &&
+        isValidId(fileId) &&
+        isValidUploadedFile(request.resource.data);
+      allow update: if isAuthorizedAdmin() &&
+        isValidId(fileId) &&
+        isValidUploadedFile(request.resource.data);
+      allow delete: if isAuthorizedAdmin() && isValidId(fileId);
+    }
   }
 }
-

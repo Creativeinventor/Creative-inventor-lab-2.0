@@ -24,6 +24,7 @@ export interface AuthUser {
   email: string | null;
   displayName: string | null;
   username: string;
+  photoURL?: string | null;
 }
 
 export interface AdminUserProfile {

@@ -3,13 +3,11 @@ import { Navbar } from '../components/Navbar';
 import { FileUpload } from '../components/FileUpload';
 import { FileList } from '../components/FileList';
 import { FilePreviewModal } from '../components/FilePreviewModal';
-import { AccountSettingsModal } from '../components/AccountSettingsModal';
 import { UploadedFileRecord } from '../types';
 import { Sparkles } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const [previewFile, setPreviewFile] = useState<UploadedFileRecord | null>(null);
-  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const handleUploadSuccess = () => {
@@ -19,7 +17,7 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#070a13] text-slate-100 flex flex-col">
       {/* Top Navbar */}
-      <Navbar onOpenAccountSettings={() => setIsAccountSettingsOpen(true)} />
+      <Navbar />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-10">
@@ -70,12 +68,6 @@ export const DashboardPage: React.FC = () => {
         file={previewFile}
         isOpen={Boolean(previewFile)}
         onClose={() => setPreviewFile(null)}
-      />
-
-      {/* Account Settings Modal (Change User ID & Change Password) */}
-      <AccountSettingsModal
-        isOpen={isAccountSettingsOpen}
-        onClose={() => setIsAccountSettingsOpen(false)}
       />
     </div>
   );

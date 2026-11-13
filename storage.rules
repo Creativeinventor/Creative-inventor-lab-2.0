@@ -8,12 +8,18 @@ service firebase.storage {
       allow read, write: if false;
     }
 
-    // Admin uploads folder: Only authenticated administrators can read, upload, and delete
+    function isAuthorizedAdmin() {
+      return request.auth != null &&
+        request.auth.token.email == '20sgamingrohit@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    // Admin uploads folder: Strictly restricted to 20sgamingrohit@gmail.com
     match /uploads/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
+      allow read: if isAuthorizedAdmin();
+      allow write: if isAuthorizedAdmin() &&
         request.resource.size < 500 * 1024 * 1024; // 500MB safety ceiling per file
-      allow delete: if request.auth != null;
+      allow delete: if isAuthorizedAdmin();
     }
   }
 }
