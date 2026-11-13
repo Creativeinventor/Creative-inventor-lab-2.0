@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { PublicFrontPage } from './pages/PublicFrontPage';
 import { Sparkles, AlertTriangle } from 'lucide-react';
 
 interface ErrorBoundaryState {
@@ -48,10 +49,29 @@ class AppErrorBoundary extends React.Component<
   }
 }
 
+type ViewMode = 'public' | 'admin-login' | 'admin';
+
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
+  const [viewMode, setViewMode] = useState<ViewMode>('public');
 
-  if (loading) {
+  useEffect(() => {
+    if (user && viewMode === 'admin-login') {
+      setViewMode('admin');
+    } else if (!user && viewMode === 'admin') {
+      setViewMode('public');
+    }
+  }, [user, viewMode]);
+
+  const handleOpenAdmin = () => {
+    if (user) {
+      setViewMode('admin');
+    } else {
+      setViewMode('admin-login');
+    }
+  };
+
+  if (loading && viewMode !== 'public') {
     return (
       <div className="min-h-screen w-full bg-[#070a13] flex flex-col items-center justify-center text-slate-100">
         <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 p-0.5 shadow-2xl shadow-cyan-500/30 mb-6">
@@ -67,11 +87,28 @@ const MainApp: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return <LoginPage onSuccess={() => {}} />;
+  if (viewMode === 'admin' && user) {
+    return <DashboardPage onViewFrontPage={() => setViewMode('public')} />;
   }
 
-  return <DashboardPage />;
+  if (viewMode === 'admin-login') {
+    if (user) {
+      return <DashboardPage onViewFrontPage={() => setViewMode('public')} />;
+    }
+    return (
+      <LoginPage
+        onSuccess={() => setViewMode('admin')}
+        onBack={() => setViewMode('public')}
+      />
+    );
+  }
+
+  return (
+    <PublicFrontPage
+      onOpenAdmin={handleOpenAdmin}
+      isAdminLoggedIn={Boolean(user)}
+    />
+  );
 };
 
 export default function App() {

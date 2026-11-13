@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   deleteDoc,
+  setDoc,
   doc,
   onSnapshot,
   query,
@@ -201,3 +202,96 @@ export async function deleteUploadedFileMetadata(fileId: string): Promise<void> 
     handleFirestoreError(error, OperationType.DELETE, docPath, true);
   }
 }
+
+function safeDocId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+}
+
+/**
+ * Best-effort cloud sync for Google Drive links to Firestore `projectLinks`
+ * so public visitors across devices see the same curated list when Firestore is active.
+ * Never throws or blocks local persistence if Firestore is unprovisioned.
+ */
+export async function publishProjectLink(record: UploadedFileRecord): Promise<void> {
+  const { db } = getServices();
+  if (!db) return;
+  try {
+    await setDoc(doc(db, 'projectLinks', safeDocId(record.id)), {
+      id: record.id,
+      fileName: record.fileName,
+      fileType: record.fileType || '',
+      fileSize: record.fileSize || 0,
+      storagePath: record.storagePath || '',
+      downloadURL: record.downloadURL || '',
+      uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : new Date().toISOString(),
+      uploadedBy: record.uploadedBy || '',
+      source: record.source || 'google-drive',
+      isFolder: Boolean(record.isFolder),
+      driveFileId: record.driveFileId || '',
+      driveAccountEmail: record.driveAccountEmail || '',
+      driveAccountName: record.driveAccountName || '',
+      driveAccountPhoto: record.driveAccountPhoto || '',
+      thumbnailLink: record.thumbnailLink || '',
+      iconLink: record.iconLink || '',
+      webViewLink: record.webViewLink || '',
+      webContentLink: record.webContentLink || '',
+    });
+  } catch {
+    // Non-fatal fallback: localStorage persistence remains active
+  }
+}
+
+export async function unpublishProjectLink(recordId: string): Promise<void> {
+  const { db } = getServices();
+  if (!db) return;
+  try {
+    await deleteDoc(doc(db, 'projectLinks', safeDocId(recordId)));
+  } catch {
+    // Non-fatal
+  }
+}
+
+export function subscribeToPublicProjectLinks(
+  onUpdate: (items: UploadedFileRecord[]) => void
+): () => void {
+  const { db } = getServices();
+  if (!db) return () => {};
+
+  try {
+    return onSnapshot(
+      collection(db, 'projectLinks'),
+      (snapshot) => {
+        const items: UploadedFileRecord[] = snapshot.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: data.id || d.id,
+            fileName: data.fileName || 'Untitled',
+            fileType: data.fileType || '',
+            fileSize: Number(data.fileSize || 0),
+            storagePath: data.storagePath || '',
+            downloadURL: data.downloadURL || '',
+            uploadedAt: data.uploadedAt,
+            uploadedBy: data.uploadedBy || '',
+            source: data.source || 'google-drive',
+            isFolder: Boolean(data.isFolder),
+            driveFileId: data.driveFileId,
+            driveAccountEmail: data.driveAccountEmail,
+            driveAccountName: data.driveAccountName,
+            driveAccountPhoto: data.driveAccountPhoto,
+            thumbnailLink: data.thumbnailLink || undefined,
+            iconLink: data.iconLink || undefined,
+            webViewLink: data.webViewLink || undefined,
+            webContentLink: data.webContentLink || undefined,
+          };
+        });
+        onUpdate(items);
+      },
+      () => {
+        // Silently ignore if Firestore projectLinks is unavailable
+      }
+    );
+  } catch {
+    return () => {};
+  }
+}
+

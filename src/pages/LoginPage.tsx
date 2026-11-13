@@ -5,11 +5,13 @@ import {
   ShieldCheck,
   Copy,
   Check,
+  ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface LoginPageProps {
   onSuccess: () => void;
+  onBack?: () => void;
 }
 
 const GoogleLogo: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
@@ -38,7 +40,7 @@ const GoogleLogo: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' })
   </svg>
 );
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onBack }) => {
   const { loginWithGoogle, authError, clearAuthError } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +106,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
             CREATIVE INVENTOR LAB
           </span>
         </div>
+
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Project files</span>
+          </button>
+        )}
       </header>
 
       {/* Centered Login Card */}

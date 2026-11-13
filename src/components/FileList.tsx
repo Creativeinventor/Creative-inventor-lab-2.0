@@ -14,7 +14,11 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { UploadedFileRecord } from '../types';
-import { subscribeToUploadedFiles, deleteUploadedFileMetadata } from '../firebase/firestore';
+import {
+  subscribeToUploadedFiles,
+  subscribeToPublicProjectLinks,
+  deleteUploadedFileMetadata,
+} from '../firebase/firestore';
 import { deleteFileFromStorage } from '../firebase/storage';
 import {
   getKnownAndConnectedDriveAccounts,
@@ -38,13 +42,16 @@ import {
 interface FileListProps {
   onOpenFile: (file: UploadedFileRecord) => void;
   refreshTrigger?: number;
+  readOnly?: boolean;
 }
 
 export const FileList: React.FC<FileListProps> = ({
   onOpenFile,
   refreshTrigger,
+  readOnly = false,
 }) => {
   const [firebaseFiles, setFirebaseFiles] = useState<UploadedFileRecord[]>([]);
+  const [cloudProjectLinks, setCloudProjectLinks] = useState<UploadedFileRecord[]>([]);
   const [driveLinks, setDriveLinks] = useState<UploadedFileRecord[]>(() =>
     getLinkedDriveItems()
   );
@@ -70,8 +77,23 @@ export const FileList: React.FC<FileListProps> = ({
     return subscribeToDriveState(refreshDriveLinks);
   }, [refreshTrigger]);
 
-  // Subscribe to real-time updates from Firestore (non-blocking if Firestore unprovisioned)
+  // Subscribe to public projectLinks collection (cross-device shared list)
   useEffect(() => {
+    const unsub = subscribeToPublicProjectLinks((items) => {
+      setCloudProjectLinks(items);
+    });
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, [refreshTrigger]);
+
+  // Subscribe to real-time updates from Firestore (only in Admin mode)
+  useEffect(() => {
+    if (readOnly) {
+      setLoading(false);
+      return;
+    }
+
     let resolved = false;
     const safetyTimer = setTimeout(() => {
       if (!resolved) {
@@ -102,11 +124,23 @@ export const FileList: React.FC<FileListProps> = ({
         unsubscribe();
       }
     };
-  }, [refreshTrigger]);
+  }, [refreshTrigger, readOnly]);
 
   const files = useMemo(() => {
-    return [...driveLinks, ...firebaseFiles];
-  }, [driveLinks, firebaseFiles]);
+    const map = new Map<string, UploadedFileRecord>();
+    for (const item of cloudProjectLinks) {
+      map.set(item.id, item);
+    }
+    for (const item of driveLinks) {
+      map.set(item.id, item);
+    }
+    if (!readOnly) {
+      for (const item of firebaseFiles) {
+        map.set(item.id, item);
+      }
+    }
+    return Array.from(map.values());
+  }, [driveLinks, cloudProjectLinks, firebaseFiles, readOnly]);
 
   const driveAccountsInLinks = useMemo(() => {
     const emails = new Set<string>();
@@ -260,48 +294,53 @@ export const FileList: React.FC<FileListProps> = ({
   return (
     <div className="w-full space-y-6">
       {/* Section Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-wide">
-              MY FILES & GOOGLE DRIVE LINKS
-            </h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-bold">
-              {files.length} {files.length === 1 ? 'item' : 'items'}
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2 font-mono">
-            <HardDrive className="w-3.5 h-3.5 text-slate-500" />
-            <span>
-              Total Indexed Size:{' '}
-              <span className="text-slate-200 font-semibold">{formatFileSize(totalStorage)}</span>
-            </span>
-            {driveAccountsInLinks.length > 0 && (
-              <>
-                <span>•</span>
-                <span className="text-cyan-300">
-                  {driveAccountsInLinks.length} connected Google{' '}
-                  {driveAccountsInLinks.length === 1 ? 'Drive' : 'Drives'}
+      {(files.length > 0 || !readOnly) && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-wide">
+                {readOnly ? 'SHARED FILES & FOLDERS' : 'MY FILES & GOOGLE DRIVE LINKS'}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-bold">
+                {files.length} {files.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+            {!readOnly && (
+              <p className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2 font-mono">
+                <HardDrive className="w-3.5 h-3.5 text-slate-500" />
+                <span>
+                  Total Indexed Size:{' '}
+                  <span className="text-slate-200 font-semibold">{formatFileSize(totalStorage)}</span>
                 </span>
-              </>
+                {driveAccountsInLinks.length > 0 && (
+                  <>
+                    <span>•</span>
+                    <span className="text-cyan-300">
+                      {driveAccountsInLinks.length} connected Google{' '}
+                      {driveAccountsInLinks.length === 1 ? 'Drive' : 'Drives'}
+                    </span>
+                  </>
+                )}
+              </p>
             )}
-          </p>
-        </div>
+          </div>
 
-        {/* View mode toggle & sync refresh */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
-            title="Sync linked items with connected Google Drives"
-          >
-            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
-            <span className="hidden sm:inline">Sync Drive</span>
-          </button>
+          {/* View mode toggle & sync refresh */}
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700/80 hover:bg-slate-800 text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                title="Sync linked items with connected Google Drives"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+                <span className="hidden sm:inline">Sync Drive</span>
+              </button>
+            )}
 
-          <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-0.5">
+            <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-xl p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('grid')}
@@ -329,6 +368,7 @@ export const FileList: React.FC<FileListProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Sync Result Toast */}
       {syncMessage && (
@@ -373,61 +413,66 @@ export const FileList: React.FC<FileListProps> = ({
         </div>
       )}
 
-      {/* Search and Filters Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
-        <div className="md:col-span-7 relative">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search files, folders, extensions, or Drive email..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none transition"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
-            >
-              Clear
-            </button>
-          )}
-        </div>
+      {/* Search, Sort & Category Controls (shown when items exist or in Admin mode) */}
+      {(files.length > 0 || !readOnly) && (
+        <>
+          {/* Search and Filters Bar */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+            <div className="md:col-span-7 relative">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search files, folders, or extensions..."
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-800 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
 
-        <div className="md:col-span-5 relative">
-          <ArrowUpDown className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="w-full pl-10 pr-8 py-2.5 bg-slate-900/90 border border-slate-800 focus:border-cyan-400 rounded-xl text-white text-xs sm:text-sm appearance-none focus:outline-none cursor-pointer"
-          >
-            <option value="newest">Sort by: Newest First</option>
-            <option value="oldest">Sort by: Oldest First</option>
-            <option value="largest">Sort by: Largest Size</option>
-            <option value="smallest">Sort by: Smallest Size</option>
-            <option value="name">Sort by: Name (A - Z)</option>
-          </select>
-        </div>
-      </div>
+            <div className="md:col-span-5 relative">
+              <ArrowUpDown className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full pl-10 pr-8 py-2.5 bg-slate-900/90 border border-slate-800 focus:border-cyan-400 rounded-xl text-white text-xs sm:text-sm appearance-none focus:outline-none cursor-pointer"
+              >
+                <option value="newest">Sort by: Newest First</option>
+                <option value="oldest">Sort by: Oldest First</option>
+                <option value="largest">Sort by: Largest Size</option>
+                <option value="smallest">Sort by: Smallest Size</option>
+                <option value="name">Sort by: Name (A - Z)</option>
+              </select>
+            </div>
+          </div>
 
-      {/* Category Filter Buttons */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition cursor-pointer border ${
-              selectedCategory === cat.id
-                ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 font-semibold'
-                : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
+          {/* Category Filter Buttons */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+            {categories.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition cursor-pointer border ${
+                  selectedCategory === cat.id
+                    ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300 font-semibold'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Loading State */}
       {loading && files.length === 0 && (
@@ -438,7 +483,7 @@ export const FileList: React.FC<FileListProps> = ({
       )}
 
       {/* Empty State: No Files or Drive Links */}
-      {!loading && files.length === 0 && (
+      {!loading && files.length === 0 && !readOnly && (
         <div className="py-16 px-6 bg-slate-900/40 border border-slate-800 rounded-3xl text-center flex flex-col items-center justify-center">
           <div className="w-20 h-20 rounded-3xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-center mb-4 text-cyan-400">
             <FolderOpen className="w-10 h-10" />
@@ -480,7 +525,8 @@ export const FileList: React.FC<FileListProps> = ({
               key={file.id}
               file={file}
               onOpen={onOpenFile}
-              onDelete={(target) => setFileToDelete(target)}
+              onDelete={readOnly ? undefined : (target) => setFileToDelete(target)}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -573,14 +619,16 @@ export const FileList: React.FC<FileListProps> = ({
                             <Download className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setFileToDelete(file)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition cursor-pointer"
-                          title={isDrive ? 'Remove link from webpage' : 'Delete file'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => setFileToDelete(file)}
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-400 transition cursor-pointer"
+                            title={isDrive ? 'Remove link from webpage' : 'Delete file'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -15,6 +15,10 @@ import {
   DriveBrowseItem,
   UploadedFileRecord,
 } from '../types';
+import {
+  publishProjectLink,
+  unpublishProjectLink,
+} from './firestore';
 
 export const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'] as const;
 
@@ -502,6 +506,9 @@ export function addLinkedDriveItems(
   }
 
   saveLinkedDriveItemsList(Array.from(byId.values()));
+  added.forEach((rec) => {
+    publishProjectLink(rec).catch(() => {});
+  });
   return added;
 }
 
@@ -509,6 +516,7 @@ export function removeLinkedDriveItem(recordId: string) {
   const existing = getLinkedDriveItems();
   const filtered = existing.filter((item) => item.id !== recordId);
   saveLinkedDriveItemsList(filtered);
+  unpublishProjectLink(recordId).catch(() => {});
 }
 
 /**
@@ -598,6 +606,15 @@ export async function syncLinkedItemsWithDrive(accountEmail: string): Promise<{
       .filter((item) => !removedIds.has(item.id))
       .map((item) => (updates.has(item.id) ? { ...item, ...updates.get(item.id) } : item));
     saveLinkedDriveItemsList(nextList);
+
+    removedIds.forEach((id) => {
+      unpublishProjectLink(id).catch(() => {});
+    });
+    nextList.forEach((item) => {
+      if (updates.has(item.id)) {
+        publishProjectLink(item).catch(() => {});
+      }
+    });
   }
 
   return {

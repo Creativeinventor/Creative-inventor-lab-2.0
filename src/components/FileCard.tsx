@@ -20,10 +20,11 @@ import { DriveThumbnail } from './DriveThumbnail';
 interface FileCardProps {
   file: UploadedFileRecord;
   onOpen: (file: UploadedFileRecord) => void;
-  onDelete: (file: UploadedFileRecord) => void;
+  onDelete?: (file: UploadedFileRecord) => void;
+  readOnly?: boolean;
 }
 
-export const FileCard: React.FC<FileCardProps> = ({ file, onOpen, onDelete }) => {
+export const FileCard: React.FC<FileCardProps> = ({ file, onOpen, onDelete, readOnly = false }) => {
   const isDrive = file.source === 'google-drive';
   const isFolder = Boolean(file.isFolder);
   const ext = isFolder
@@ -162,14 +163,16 @@ export const FileCard: React.FC<FileCardProps> = ({ file, onOpen, onDelete }) =>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => onDelete(file)}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
-          title={isDrive ? 'Remove link from webpage' : 'Delete file permanently'}
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        {!readOnly && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(file)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition cursor-pointer"
+            title={isDrive ? 'Remove link from webpage' : 'Delete file permanently'}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

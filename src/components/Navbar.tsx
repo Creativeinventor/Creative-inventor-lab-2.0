@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   User as UserIcon,
   HardDrive,
+  ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -14,9 +15,13 @@ import {
 
 interface NavbarProps {
   onOpenDriveConnect: () => void;
+  onViewFrontPage?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenDriveConnect }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  onOpenDriveConnect,
+  onViewFrontPage,
+}) => {
   const { user, logout } = useAuth();
   const [connectedCount, setConnectedCount] = useState(0);
   const [totalDrivesCount, setTotalDrivesCount] = useState(0);
@@ -69,6 +74,18 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDriveConnect }) => {
 
         {/* Right Top-Corner Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 ml-auto flex-wrap justify-end max-w-full">
+          {onViewFrontPage && (
+            <button
+              type="button"
+              onClick={onViewFrontPage}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-semibold transition cursor-pointer shrink-0"
+              title="View Public Project Files Front Page"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Front Page</span>
+            </button>
+          )}
+
           {/* Top-Corner Option: Connect it to your Google Drive */}
           <button
             type="button"

@@ -37,12 +37,14 @@ interface FilePreviewModalProps {
   file: UploadedFileRecord | null;
   isOpen: boolean;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
 export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
   file,
   isOpen,
   onClose,
+  readOnly = false,
 }) => {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [loadingText, setLoadingText] = useState<boolean>(false);
@@ -388,37 +390,65 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
               </div>
 
               {folderError === 'RECONNECT_NEEDED' && (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl">
-                  <HardDrive className="w-10 h-10 text-amber-400 mb-3" />
-                  <p className="text-sm font-bold text-white mb-1">
-                    Connect {activeFile.driveAccountEmail} to Browse Folder
-                  </p>
-                  <p className="text-xs text-slate-400 max-w-md mb-5">
-                    Tap below to verify access to this Google Drive and inspect every file and subfolder inside "{activeFile.fileName}".
-                  </p>
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleReconnectDrive}
-                      disabled={reconnecting}
-                      className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${reconnecting ? 'animate-spin' : ''}`} />
-                      <span>{reconnecting ? 'Connecting...' : 'Reconnect Google Drive'}</span>
-                    </button>
-                    {driveOpenUrl && (
-                      <a
-                        href={driveOpenUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center gap-1.5"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Open Folder in Drive</span>
-                      </a>
-                    )}
+                readOnly && activeFile.driveFileId ? (
+                  <div className="flex-1 flex flex-col gap-3">
+                    <div className="w-full h-[52vh] bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                      <iframe
+                        src={`https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(
+                          activeFile.driveFileId
+                        )}#grid`}
+                        title={activeFile.fileName}
+                        className="w-full h-full border-0"
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                      <span>If the embedded folder doesn't load due to Drive sharing permissions, open it directly in Google Drive.</span>
+                      {driveOpenUrl && (
+                        <a
+                          href={driveOpenUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open Folder in Google Drive</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl">
+                    <HardDrive className="w-10 h-10 text-amber-400 mb-3" />
+                    <p className="text-sm font-bold text-white mb-1">
+                      Connect {activeFile.driveAccountEmail} to Browse Folder
+                    </p>
+                    <p className="text-xs text-slate-400 max-w-md mb-5">
+                      Tap below to verify access to this Google Drive and inspect every file and subfolder inside "{activeFile.fileName}".
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleReconnectDrive}
+                        disabled={reconnecting}
+                        className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${reconnecting ? 'animate-spin' : ''}`} />
+                        <span>{reconnecting ? 'Connecting...' : 'Reconnect Google Drive'}</span>
+                      </button>
+                      {driveOpenUrl && (
+                        <a
+                          href={driveOpenUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Open Folder in Drive</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )
               )}
 
               {folderError && folderError !== 'RECONNECT_NEEDED' && (
@@ -653,7 +683,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
                   {ext} file {activeFile.fileSize > 0 ? `• ${formatFileSize(activeFile.fileSize)}` : ''}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-3">
-                  {isDrive && !hasActiveDriveSession && activeFile.driveAccountEmail && (
+                  {!readOnly && isDrive && !hasActiveDriveSession && activeFile.driveAccountEmail && (
                     <button
                       type="button"
                       onClick={handleReconnectDrive}

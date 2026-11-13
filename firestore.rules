@@ -39,5 +39,11 @@ service cloud.firestore {
         isValidUploadedFile(request.resource.data);
       allow delete: if isAuthorizedAdmin() && isValidId(fileId);
     }
+
+    // Publicly viewable Google Drive file/folder links selected by Admin
+    match /projectLinks/{linkId} {
+      allow read, list: if true;
+      allow create, update, delete: if isAuthorizedAdmin();
+    }
   }
 }

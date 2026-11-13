@@ -12,7 +12,11 @@ import {
 } from '../firebase/googleDrive';
 import { Sparkles, AlertCircle } from 'lucide-react';
 
-export const DashboardPage: React.FC = () => {
+interface DashboardPageProps {
+  onViewFrontPage?: () => void;
+}
+
+export const DashboardPage: React.FC<DashboardPageProps> = ({ onViewFrontPage }) => {
   const [previewFile, setPreviewFile] = useState<UploadedFileRecord | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -53,7 +57,10 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#070a13] text-slate-100 flex flex-col">
       {/* Top Navbar with single "Connect it to your Google Drive" button in top corner */}
-      <Navbar onOpenDriveConnect={handleNavbarDriveConnect} />
+      <Navbar
+        onOpenDriveConnect={handleNavbarDriveConnect}
+        onViewFrontPage={onViewFrontPage}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 space-y-10">
